@@ -215,7 +215,7 @@ impl<'tcx> Visitor<'tcx> for CheckConstVisitor<'tcx> {
                 self.const_check_violated(NonConstExpr::Loop(*source), e.span);
             }
 
-            hir::ExprKind::Match(_, _, source) => {
+            hir::ExprKind::Match(_, _, source, _) => {
                 let non_const_expr = match source {
                     // These are handled by `ExprKind::Loop` above.
                     hir::MatchSource::ForLoopDesugar => None,

@@ -380,7 +380,7 @@ impl<'tcx, 'a> Visitor<'tcx> for FindSignificantDropper<'tcx, 'a> {
             | hir::ExprKind::Assign(_, _, _)
             | hir::ExprKind::AssignOp(_, _, _)
             | hir::ExprKind::Break(_, _)
-            | hir::ExprKind::Continue(_)
+            | hir::ExprKind::Continue(_, _)
             | hir::ExprKind::Ret(_)
             | hir::ExprKind::Become(_)
             | hir::ExprKind::InlineAsm(_)
@@ -422,7 +422,7 @@ impl<'tcx, 'a> Visitor<'tcx> for FindSignificantDropper<'tcx, 'a> {
             | hir::ExprKind::Type(expr, _)
             | hir::ExprKind::Yield(expr, _)
             | hir::ExprKind::AddrOf(_, _, expr)
-            | hir::ExprKind::Match(expr, _, _)
+            | hir::ExprKind::Match(expr, _, _, _)
             | hir::ExprKind::Field(expr, _)
             | hir::ExprKind::Let(&hir::LetExpr {
                 init: expr,

@@ -479,7 +479,11 @@ impl<'a> State<'a> {
                 self.word_nbsp("loop");
                 self.print_block_with_attrs(blk, attrs);
             }
-            ast::ExprKind::Match(expr, arms, match_kind) => {
+            ast::ExprKind::Match(expr, arms, match_kind, opt_label) => {
+                if let Some(label) = opt_label {
+                    self.print_ident(label.ident);
+                    self.word_space(":");
+                }
                 self.cbox(0);
                 self.ibox(0);
 
@@ -490,6 +494,7 @@ impl<'a> State<'a> {
                         self.space();
                     }
                     MatchKind::Postfix => {
+                        assert!(opt_label.is_none());
                         self.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
                         self.word_nbsp(".match");
                     }
@@ -633,7 +638,7 @@ impl<'a> State<'a> {
                         expr,
                         // Parenthesize if required by precedence, or in the
                         // case of `continue 'inner: loop { continue 'inner 1 } + 1`
-                        // FIXME(labeled_match) update above comment to use labeled match
+                        // FIXME update above comment to use labeled match
                         expr.precedence().order() < parser::PREC_JUMP
                             || (opt_label.is_none() && classify::leading_labeled_expr(expr)),
                         fixup.subsequent_subexpression(),

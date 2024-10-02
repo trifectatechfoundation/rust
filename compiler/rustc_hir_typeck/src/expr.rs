@@ -476,7 +476,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Break(destination, ref expr_opt) => {
                 self.check_expr_break(destination, expr_opt.as_deref(), expr)
             }
-            ExprKind::Continue(destination) => {
+            ExprKind::Continue(destination, opt_expr) => {
+                assert!(opt_expr.is_none()); // FIXME
                 if destination.target_id.is_ok() {
                     tcx.types.never
                 } else {
@@ -490,7 +491,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Loop(body, _, source, _) => {
                 self.check_expr_loop(body, source, expected, expr)
             }
-            ExprKind::Match(discrim, arms, match_src) => {
+            ExprKind::Match(discrim, arms, match_src, _) => {
                 self.check_match(expr, discrim, arms, expected, match_src)
             }
             ExprKind::Closure(closure) => self.check_expr_closure(closure, expr.span, expected),

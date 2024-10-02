@@ -1939,7 +1939,7 @@ impl<'tcx, 'exprs, E: AsCoercionSite> CoerceMany<'tcx, 'exprs, E> {
                 && !in_external_macro(fcx.tcx.sess, cond_expr.span)
                 && !matches!(
                     cond_expr.kind,
-                    hir::ExprKind::Match(.., hir::MatchSource::TryDesugar(_))
+                    hir::ExprKind::Match(.., hir::MatchSource::TryDesugar(_), _)
                 )
             {
                 err.span_label(cond_expr.span, "expected this to be `()`");

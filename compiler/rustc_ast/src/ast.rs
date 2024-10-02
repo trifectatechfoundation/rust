@@ -1302,8 +1302,8 @@ impl Expr {
             ExprKind::While(..) => ExprPrecedence::While,
             ExprKind::ForLoop { .. } => ExprPrecedence::ForLoop,
             ExprKind::Loop(..) => ExprPrecedence::Loop,
-            ExprKind::Match(_, _, MatchKind::Prefix) => ExprPrecedence::Match,
-            ExprKind::Match(_, _, MatchKind::Postfix) => ExprPrecedence::PostfixMatch,
+            ExprKind::Match(_, _, MatchKind::Prefix, _) => ExprPrecedence::Match,
+            ExprKind::Match(_, _, MatchKind::Postfix, _) => ExprPrecedence::PostfixMatch,
             ExprKind::Closure(..) => ExprPrecedence::Closure,
             ExprKind::Block(..) => ExprPrecedence::Block,
             ExprKind::TryBlock(..) => ExprPrecedence::TryBlock,
@@ -1463,7 +1463,7 @@ pub enum ExprKind {
     /// `'label: loop { block }`
     Loop(P<Block>, Option<Label>, Span),
     /// A `match` block.
-    Match(P<Expr>, ThinVec<Arm>, MatchKind),
+    Match(P<Expr>, ThinVec<Arm>, MatchKind, Option<Label>),
     /// A closure (e.g., `move |a, b, c| a + b + c`).
     Closure(Box<Closure>),
     /// A block (`'label: { ... }`).

@@ -99,9 +99,14 @@ pub fn expr_requires_semi_to_be_stmt(e: &ast::Expr) -> bool {
 /// }
 /// ```
 pub fn leading_labeled_expr(mut expr: &ast::Expr) -> bool {
+    // TODO
     loop {
         match &expr.kind {
-            Block(_, label) | ForLoop { label, .. } | Loop(_, label, _) | While(_, _, label) => {
+            Block(_, label)
+            | ForLoop { label, .. }
+            | Loop(_, label, _)
+            | While(_, _, label)
+            | Match(_, _, _, label) => {
                 return label.is_some();
             }
 
@@ -113,7 +118,6 @@ pub fn leading_labeled_expr(mut expr: &ast::Expr) -> bool {
             | Cast(e, _)
             | Field(e, _)
             | Index(e, _, _)
-            | Match(e, _, MatchKind::Postfix)
             | Range(Some(e), _, _)
             | Try(e) => {
                 expr = e;
@@ -137,7 +141,6 @@ pub fn leading_labeled_expr(mut expr: &ast::Expr) -> bool {
             | Let(..)
             | Lit(..)
             | MacCall(..)
-            | Match(_, _, MatchKind::Prefix)
             | OffsetOf(..)
             | Paren(..)
             | Path(..)

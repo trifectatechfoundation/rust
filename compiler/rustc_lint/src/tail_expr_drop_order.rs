@@ -253,12 +253,12 @@ impl<'a, 'tcx> Visitor<'tcx> for LintTailExpr<'a, 'tcx> {
             return;
         }
         match expr.kind {
-            ExprKind::Match(scrutinee, _, _) => self.visit_expr(scrutinee),
+            ExprKind::Match(scrutinee, _, _, _) => self.visit_expr(scrutinee),
 
             ExprKind::ConstBlock(_)
             | ExprKind::Array(_)
             | ExprKind::Break(_, _)
-            | ExprKind::Continue(_)
+            | ExprKind::Continue(_, _)
             | ExprKind::Ret(_)
             | ExprKind::Become(_)
             | ExprKind::Yield(_, _)

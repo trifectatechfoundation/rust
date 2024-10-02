@@ -4986,7 +4986,7 @@ impl<'v> Visitor<'v> for ReturnsVisitor<'v> {
                     self.visit_expr(el);
                 }
             }
-            hir::ExprKind::Match(_, arms, _) if self.in_block_tail => {
+            hir::ExprKind::Match(_, arms, _, _) if self.in_block_tail => {
                 for arm in arms {
                     self.visit_expr(arm.body);
                 }
