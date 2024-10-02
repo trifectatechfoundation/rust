@@ -322,7 +322,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                         collect_blocks(blk1, blocks);
                         collect_blocks(blk2, blocks);
                     }
-                    hir::ExprKind::Match(_, arms, _) => {
+                    hir::ExprKind::Match(_, arms, _, _) => {
                         // all arms must have same types
                         for arm in arms.iter() {
                             collect_blocks(arm.body, blocks);

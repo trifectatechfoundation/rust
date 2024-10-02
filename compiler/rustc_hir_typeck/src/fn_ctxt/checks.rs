@@ -2090,7 +2090,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         }
 
-        if let hir::ExprKind::Match(_, arms, _) = expr.kind {
+        if let hir::ExprKind::Match(_, arms, _, _) = expr.kind {
             let mut iter = arms.iter().filter_map(|arm| check_in_progress(arm.body));
             if let Some(span) = iter.next() {
                 if iter.next().is_none() {

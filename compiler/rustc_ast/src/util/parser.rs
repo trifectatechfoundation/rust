@@ -297,7 +297,7 @@ pub fn contains_exterior_struct_lit(value: &ast::Expr) -> bool {
         | ast::ExprKind::Type(x, _)
         | ast::ExprKind::Field(x, _)
         | ast::ExprKind::Index(x, _, _)
-        | ast::ExprKind::Match(x, _, ast::MatchKind::Postfix) => {
+        | ast::ExprKind::Match(x, _, ast::MatchKind::Postfix, _) => {
             // &X { y: 1 }, X { y: 1 }.y
             contains_exterior_struct_lit(x)
         }

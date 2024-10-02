@@ -14,8 +14,8 @@ use rustc_span::hygiene::DesugaringKind;
 use rustc_span::{BytePos, Span};
 
 use crate::errors::{
-    BreakInsideClosure, BreakInsideCoroutine, BreakNonLoop, ContinueLabeledBlock, OutsideLoop,
-    OutsideLoopSuggestion, UnlabeledCfInWhileCondition, UnlabeledInLabeledBlock,
+    BreakInsideClosure, BreakInsideCoroutine, BreakNonLoop, OutsideLoop, OutsideLoopSuggestion,
+    UnlabeledCfInWhileCondition, UnlabeledInLabeledBlock,
 };
 
 /// The context in which a block is encountered.
@@ -268,32 +268,83 @@ impl<'hir> Visitor<'hir> for CheckLoopVisitor<'hir> {
                     self.cx_stack.len() - 1,
                 );
             }
-            hir::ExprKind::Continue(destination) => {
-                self.require_label_in_labeled_block(e.span, &destination, "continue");
+            hir::ExprKind::Continue(cont_label, ref opt_expr) => {
+                if let Some(e) = opt_expr {
+                    self.visit_expr(e);
+                }
 
-                match destination.target_id {
-                    Ok(loop_id) => {
-                        if let Node::Block(block) = self.tcx.hir_node(loop_id) {
-                            self.tcx.dcx().emit_err(ContinueLabeledBlock {
-                                span: e.span,
-                                block_span: block.span,
-                            });
-                        }
-                    }
+                if self.require_label_in_labeled_block(e.span, &cont_label, "continue") {
+                    // If we emitted an error about an unlabeled break in a labeled
+                    // block, we don't need any further checking for this break any more
+                    return;
+                }
+
+                let loop_id = match cont_label.target_id {
+                    Ok(loop_id) => Some(loop_id),
+                    Err(hir::LoopIdError::OutsideLoopScope) => None,
                     Err(hir::LoopIdError::UnlabeledCfInWhileCondition) => {
                         self.tcx.dcx().emit_err(UnlabeledCfInWhileCondition {
                             span: e.span,
                             cf_type: "continue",
                         });
+                        None
                     }
-                    Err(_) => {}
+                    Err(hir::LoopIdError::UnresolvedLabel) => None,
+                };
+
+                if let Some(Node::Expr(expr)) = loop_id.map(|id| self.tcx.hir_node(id))
+                    && let hir::ExprKind::Match(..) = expr.kind
+                {
+                    return;
                 }
+
+                if let Some(cont_expr) = opt_expr {
+                    let (head, loop_label, loop_kind) = if let Some(loop_id) = loop_id {
+                        match self.tcx.hir().expect_expr(loop_id).kind {
+                            hir::ExprKind::Loop(_, label, source, sp) => {
+                                (Some(sp), label, Some(source))
+                            }
+                            ref r => {
+                                span_bug!(e.span, "continue label resolved to a non-loop: {:?}", r)
+                            }
+                        }
+                    } else {
+                        (None, None, None)
+                    };
+                    match loop_kind {
+                        None | Some(hir::LoopSource::Loop) => (),
+                        Some(kind) => {
+                            let suggestion = format!(
+                                "break{}",
+                                cont_label
+                                    .label
+                                    .map_or_else(String::new, |l| format!(" {}", l.ident))
+                            );
+                            self.tcx.dcx().emit_err(BreakNonLoop {
+                                span: e.span,
+                                head,
+                                kind: kind.name(),
+                                suggestion,
+                                loop_label,
+                                break_label: cont_label.label,
+                                break_expr_kind: &cont_expr.kind,
+                                break_expr_span: cont_expr.span,
+                            });
+                        }
+                    }
+                }
+
+                let sp_lo = e.span.with_lo(e.span.lo() + BytePos("break".len() as u32));
+                let label_sp = match cont_label.label {
+                    Some(label) => sp_lo.with_hi(label.ident.span.hi()),
+                    None => sp_lo.shrink_to_lo(),
+                };
                 self.require_break_cx(
                     BreakContextKind::Continue,
                     e.span,
-                    e.span,
+                    label_sp,
                     self.cx_stack.len() - 1,
-                )
+                );
             }
             _ => intravisit::walk_expr(self, e),
         }

@@ -2126,7 +2126,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             hir::ExprKind::Loop(_, _, hir::LoopSource::While, _) => tail_expr,
             hir::ExprKind::Loop(_, _, hir::LoopSource::ForLoop, _) => {
                 match tail_expr.peel_drop_temps() {
-                    Expr { kind: ExprKind::Match(_, [Arm { body, .. }], _), .. } => body,
+                    Expr { kind: ExprKind::Match(_, [Arm { body, .. }], _, _), .. } => body,
                     _ => return false, // Not really a for loop
                 }
             }

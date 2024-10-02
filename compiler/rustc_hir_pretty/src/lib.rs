@@ -1547,9 +1547,13 @@ impl<'a> State<'a> {
                 self.head("loop");
                 self.print_block(blk);
             }
-            hir::ExprKind::Match(expr, arms, _) => {
+            hir::ExprKind::Match(expr, arms, _, opt_label) => {
                 self.cbox(INDENT_UNIT);
                 self.ibox(INDENT_UNIT);
+                if let Some(label) = opt_label {
+                    self.print_ident(label.ident);
+                    self.word_space(":");
+                }
                 self.word_nbsp("match");
                 self.print_expr_as_cond(expr);
                 self.space();
@@ -1634,11 +1638,15 @@ impl<'a> State<'a> {
                     self.print_expr_cond_paren(expr, expr.precedence() < ExprPrecedence::Jump);
                 }
             }
-            hir::ExprKind::Continue(destination) => {
+            hir::ExprKind::Continue(destination, opt_expr) => {
                 self.word("continue");
                 if let Some(label) = destination.label {
                     self.space();
                     self.print_ident(label.ident);
+                }
+                if let Some(expr) = opt_expr {
+                    self.space();
+                    self.print_expr_cond_paren(expr, expr.precedence() < ExprPrecedence::Jump);
                 }
             }
             hir::ExprKind::Ret(result) => {

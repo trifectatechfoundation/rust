@@ -493,7 +493,11 @@ impl<'a> State<'a> {
                 self.word_nbsp("loop");
                 self.print_block_with_attrs(blk, attrs);
             }
-            ast::ExprKind::Match(expr, arms, match_kind) => {
+            ast::ExprKind::Match(expr, arms, match_kind, opt_label) => {
+                if let Some(label) = opt_label {
+                    self.print_ident(label.ident);
+                    self.word_space(":");
+                }
                 self.cbox(0);
                 self.ibox(0);
 
@@ -504,6 +508,7 @@ impl<'a> State<'a> {
                         self.space();
                     }
                     MatchKind::Postfix => {
+                        assert!(opt_label.is_none());
                         self.print_expr_cond_paren(
                             expr,
                             expr.precedence() < ExprPrecedence::Unambiguous,

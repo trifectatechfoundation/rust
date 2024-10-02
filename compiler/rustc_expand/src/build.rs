@@ -587,7 +587,7 @@ impl<'a> ExtCtxt<'a> {
     }
 
     pub fn expr_match(&self, span: Span, arg: P<ast::Expr>, arms: ThinVec<ast::Arm>) -> P<Expr> {
-        self.expr(span, ast::ExprKind::Match(arg, arms, MatchKind::Prefix))
+        self.expr(span, ast::ExprKind::Match(arg, arms, MatchKind::Prefix, None))
     }
 
     pub fn expr_if(

@@ -2302,7 +2302,7 @@ impl<'infcx, 'tcx> MirBorrowckCtxt<'_, 'infcx, 'tcx> {
                     _,
                 ) = ex.kind
                     && let hir::StmtKind::Expr(hir::Expr {
-                        kind: hir::ExprKind::Match(call, [_, bind, ..], _),
+                        kind: hir::ExprKind::Match(call, [_, bind, ..], _, _),
                         span: head_span,
                         ..
                     }) = stmt.kind
@@ -4426,7 +4426,7 @@ impl<'hir> Visitor<'hir> for BreakFinder {
             hir::ExprKind::Break(destination, _) => {
                 self.found_breaks.push((destination, ex.span));
             }
-            hir::ExprKind::Continue(destination) => {
+            hir::ExprKind::Continue(destination, _) => {
                 self.found_continues.push((destination, ex.span));
             }
             _ => {}
@@ -4503,7 +4503,7 @@ impl<'v, 'tcx> Visitor<'v> for ConditionVisitor<'tcx> {
                     }
                 }
             }
-            hir::ExprKind::Match(e, arms, loop_desugar) => {
+            hir::ExprKind::Match(e, arms, loop_desugar, _) => {
                 // If the binding is initialized in one of the match arms, then the other match
                 // arms might be missing an initialization.
                 let results: Vec<bool> = arms

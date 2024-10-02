@@ -798,15 +798,18 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 },
                 Err(err) => bug!("invalid loop id for break: {}", err),
             },
-            hir::ExprKind::Continue(dest) => match dest.target_id {
-                Ok(loop_id) => ExprKind::Continue {
-                    label: region::Scope {
-                        local_id: loop_id.local_id,
-                        data: region::ScopeData::Node,
+            hir::ExprKind::Continue(dest, opt_expr) => {
+                assert!(opt_expr.is_none()); // FIXME
+                match dest.target_id {
+                    Ok(loop_id) => ExprKind::Continue {
+                        label: region::Scope {
+                            local_id: loop_id.local_id,
+                            data: region::ScopeData::Node,
+                        },
                     },
-                },
-                Err(err) => bug!("invalid loop id for continue: {}", err),
-            },
+                    Err(err) => bug!("invalid loop id for continue: {}", err),
+                }
+            }
             hir::ExprKind::Let(let_expr) => ExprKind::Let {
                 expr: self.mirror_expr(let_expr.init),
                 pat: self.pattern_from_hir(let_expr.pat),
@@ -826,7 +829,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 then: self.mirror_expr(then),
                 else_opt: else_opt.map(|el| self.mirror_expr(el)),
             },
-            hir::ExprKind::Match(discr, arms, match_source) => ExprKind::Match {
+            hir::ExprKind::Match(discr, arms, match_source, _) => ExprKind::Match {
                 scrutinee: self.mirror_expr(discr),
                 scrutinee_hir_id: discr.hir_id,
                 arms: arms.iter().map(|a| self.convert_arm(a)).collect(),

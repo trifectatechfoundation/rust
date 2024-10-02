@@ -122,7 +122,6 @@ enum LiveNodeKind {
     VarDefNode(Span, HirId),
     ClosureNode,
     ExitNode,
-    ErrNode,
 }
 
 fn live_node_kind_to_string(lnk: LiveNodeKind, tcx: TyCtxt<'_>) -> String {
@@ -133,7 +132,6 @@ fn live_node_kind_to_string(lnk: LiveNodeKind, tcx: TyCtxt<'_>) -> String {
         VarDefNode(s, _) => format!("Var def node [{}]", sm.span_to_diagnostic_string(s)),
         ClosureNode => "Closure node".to_owned(),
         ExitNode => "Exit node".to_owned(),
-        ErrNode => "Error node".to_owned(),
     }
 }
 
@@ -433,7 +431,7 @@ impl<'tcx> Visitor<'tcx> for IrMaps<'tcx> {
             | hir::ExprKind::DropTemps(..)
             | hir::ExprKind::Unary(..)
             | hir::ExprKind::Break(..)
-            | hir::ExprKind::Continue(_)
+            | hir::ExprKind::Continue(..)
             | hir::ExprKind::Lit(_)
             | hir::ExprKind::ConstBlock(..)
             | hir::ExprKind::Ret(..)
@@ -910,7 +908,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                 self.propagate_through_expr(cond, ln)
             }
 
-            hir::ExprKind::Match(ref e, arms, _) => {
+            hir::ExprKind::Match(ref e, arms, _, _) => {
                 //
                 //      (e)
                 //       |
@@ -967,18 +965,21 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                 }
             }
 
-            hir::ExprKind::Continue(label) => {
-                // Find which label this expr continues to
-                let sc = label
-                    .target_id
-                    .unwrap_or_else(|err| span_bug!(expr.span, "loop scope error: {}", err));
+            hir::ExprKind::Continue(label, ref opt_expr) => {
+                // Find which label this break jumps to
+                let target = match label.target_id {
+                    Ok(hir_id) => self.cont_ln.get(&hir_id),
+                    Err(err) => span_bug!(expr.span, "loop scope error: {}", err),
+                }
+                .cloned();
 
                 // Now that we know the label we're going to,
                 // look it up in the continue loop nodes table
-                self.cont_ln.get(&sc).cloned().unwrap_or_else(|| {
-                    self.ir.tcx.dcx().span_delayed_bug(expr.span, "continue to unknown label");
-                    self.ir.add_live_node(ErrNode)
-                })
+
+                match target {
+                    Some(b) => self.propagate_through_opt_expr(opt_expr.as_deref(), b),
+                    None => span_bug!(expr.span, "`continue` to unknown label"),
+                }
             }
 
             hir::ExprKind::Assign(ref l, ref r, _) => {

@@ -392,7 +392,7 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
                 self.walk_local(init, pat, None, || self.borrow_expr(init, BorrowKind::Immutable))?;
             }
 
-            hir::ExprKind::Match(discr, arms, _) => {
+            hir::ExprKind::Match(discr, arms, _, _) => {
                 let discr_place = self.cat_expr(discr)?;
                 self.maybe_read_scrutinee(
                     discr,

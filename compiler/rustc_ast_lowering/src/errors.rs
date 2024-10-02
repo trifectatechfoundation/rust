@@ -467,12 +467,3 @@ pub(crate) struct UseConstGenericArg {
     #[suggestion_part(code = "{other_args}")]
     pub call_args: Span,
 }
-
-#[derive(Diagnostic)]
-#[diag(ast_lowering_continue_with_val)]
-pub(crate) struct ContinueWithVal {
-    #[primary_span]
-    pub span: Span,
-    #[suggestion(code = "'", applicability = "machine-applicable", style = "verbose")]
-    pub start: Option<Span>,
-}

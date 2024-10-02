@@ -157,7 +157,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 && let Res::Local(hir_id) = path.res
                 && let Some((_, hir::Node::Expr(match_expr))) =
                     self.tcx.hir().parent_iter(hir_id).nth(2)
-                && let hir::ExprKind::Match(scrutinee, _, _) = match_expr.kind
+                && let hir::ExprKind::Match(scrutinee, _, _, _) = match_expr.kind
                 && let hir::ExprKind::Tup(exprs) = scrutinee.kind
                 && let hir::ExprKind::AddrOf(_, _, macro_arg) = exprs[idx].kind
             {

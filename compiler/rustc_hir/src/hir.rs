@@ -2487,7 +2487,7 @@ pub enum ExprKind<'hir> {
     Loop(&'hir Block<'hir>, Option<Label>, LoopSource, Span),
     /// A `match` block, with a source that indicates whether or not it is
     /// the result of a desugaring, and if so, which kind.
-    Match(&'hir Expr<'hir>, &'hir [Arm<'hir>], MatchSource),
+    Match(&'hir Expr<'hir>, &'hir [Arm<'hir>], MatchSource, Option<Label>),
     /// A closure (e.g., `move |a, b, c| {a + b + c}`).
     ///
     /// The `Span` is the argument block `|...|`.
@@ -2519,7 +2519,7 @@ pub enum ExprKind<'hir> {
     /// A `break`, with an optional label to break.
     Break(Destination, Option<&'hir Expr<'hir>>),
     /// A `continue`, with an optional label.
-    Continue(Destination),
+    Continue(Destination, Option<&'hir Expr<'hir>>),
     /// A `return`, with an optional value to be returned.
     Ret(Option<&'hir Expr<'hir>>),
     /// A `become`, with the value to be returned.
@@ -2720,6 +2720,13 @@ pub struct Destination {
     /// These errors are caught and then reported during the diagnostics pass in
     /// `librustc_passes/loops.rs`
     pub target_id: Result<HirId, LoopIdError>,
+}
+
+pub enum DestinationTarget {
+    Loop(HirId),
+    Match(HirId),
+    Block(HirId),
+    Error(LoopIdError),
 }
 
 /// The yield kind that caused an `ExprKind::Yield`.

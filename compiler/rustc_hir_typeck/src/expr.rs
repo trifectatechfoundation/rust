@@ -347,7 +347,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
 
                     // See note on `PatKind::Or` below for why this is `all`.
-                    ExprKind::Match(scrutinee, arms, _) => {
+                    ExprKind::Match(scrutinee, arms, _, _) => {
                         assert_eq!(scrutinee.hir_id, expr.hir_id);
                         arms.iter()
                             .all(|arm| self.pat_guaranteed_to_constitute_read_for_never(arm.pat))
@@ -384,7 +384,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     | ExprKind::Loop(_, _, _, _)
                     | ExprKind::Lit(_)
                     | ExprKind::Path(_)
-                    | ExprKind::Continue(_)
+                    | ExprKind::Continue(_, _)
                     | ExprKind::OffsetOf(_, _)
                     | ExprKind::Err(_) => unreachable!("no sub-expr expected for {:?}", expr.kind),
                 }
@@ -530,7 +530,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Break(destination, ref expr_opt) => {
                 self.check_expr_break(destination, expr_opt.as_deref(), expr)
             }
-            ExprKind::Continue(destination) => {
+            ExprKind::Continue(destination, opt_expr) => {
+                assert!(opt_expr.is_none()); // FIXME
                 if destination.target_id.is_ok() {
                     tcx.types.never
                 } else {
@@ -544,7 +545,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Loop(body, _, source, _) => {
                 self.check_expr_loop(body, source, expected, expr)
             }
-            ExprKind::Match(discrim, arms, match_src) => {
+            ExprKind::Match(discrim, arms, match_src, _) => {
                 self.check_expr_match(expr, discrim, arms, expected, match_src)
             }
             ExprKind::Closure(closure) => self.check_expr_closure(closure, expr.span, expected),

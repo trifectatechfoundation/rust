@@ -4737,6 +4737,17 @@ impl<'a, 'ast, 'ra: 'ast, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
                 });
             }
 
+            ExprKind::Match(ref discr, ref arms, _kind, label) => {
+                self.with_resolved_label(label, expr.id, |this| {
+                    this.with_rib(ValueNS, RibKind::Normal, |this| {
+                        this.visit_expr(discr);
+                        for arm in arms {
+                            this.visit_arm(arm);
+                        }
+                    })
+                });
+            }
+
             ExprKind::Block(ref block, label) => self.resolve_labeled_block(label, block.id, block),
 
             // Equivalent to `visit::walk_expr` + passing some context to children.

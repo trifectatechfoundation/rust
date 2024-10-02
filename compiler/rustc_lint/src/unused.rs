@@ -111,7 +111,7 @@ impl<'tcx> LateLintPass<'tcx> for UnusedResults {
             return;
         }
 
-        if let hir::ExprKind::Match(await_expr, _arms, hir::MatchSource::AwaitDesugar) = expr.kind
+        if let hir::ExprKind::Match(await_expr, _arms, hir::MatchSource::AwaitDesugar, _) = expr.kind
             && let ty = cx.typeck_results().expr_ty(await_expr)
             && let ty::Alias(ty::Opaque, ty::AliasTy { def_id: future_def_id, .. }) = ty.kind()
             && cx.tcx.ty_is_opaque_future(ty)
@@ -907,7 +907,7 @@ trait UnusedDelimLint {
                 (iter, UnusedDelimsCtx::ForIterExpr, true, None, Some(body.span.lo()), true)
             }
 
-            Match(ref head, _, ast::MatchKind::Prefix)
+            Match(ref head, _, ast::MatchKind::Prefix, _)
                 if Self::LINT_EXPR_IN_PATTERN_MATCHING_CTX =>
             {
                 let left = e.span.lo() + rustc_span::BytePos(5);
@@ -1183,7 +1183,7 @@ impl EarlyLintPass for UnusedParens {
                 }
                 return;
             }
-            ExprKind::Match(ref _expr, ref arm, _) => {
+            ExprKind::Match(ref _expr, ref arm, _, _) => {
                 for a in arm {
                     if let Some(body) = &a.body {
                         self.check_unused_delims_expr(

@@ -19,7 +19,7 @@ use visit::{Visitor, walk_expr};
 
 use super::errors::{
     AsyncCoroutinesNotSupported, AwaitOnlyInAsyncFnAndBlocks, ClosureCannotBeStatic,
-    ContinueWithVal, CoroutineTooManyParameters, FunctionalRecordUpdateDestructuringAssignment,
+    CoroutineTooManyParameters, FunctionalRecordUpdateDestructuringAssignment,
     InclusiveRangeWithNoEnd, MatchArmWithNoBody, NeverPatternWithBody, NeverPatternWithGuard,
     UnderscoreExprLhsAssign,
 };
@@ -199,13 +199,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     })
                 }
                 ExprKind::TryBlock(body) => self.lower_expr_try_block(body),
-                ExprKind::Match(expr, arms, kind) => hir::ExprKind::Match(
+                ExprKind::Match(expr, arms, kind, opt_label) => hir::ExprKind::Match(
                     self.lower_expr(expr),
                     self.arena.alloc_from_iter(arms.iter().map(|x| self.lower_arm(x))),
                     match kind {
                         MatchKind::Prefix => hir::MatchSource::Normal,
                         MatchKind::Postfix => hir::MatchSource::Postfix,
                     },
+                    self.lower_label(*opt_label, e.id, expr_hir_id),
                 ),
                 ExprKind::Await(expr, await_kw_span) => self.lower_expr_await(*await_kw_span, expr),
                 ExprKind::Closure(box Closure {
@@ -308,20 +309,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     hir::ExprKind::Break(self.lower_jump_destination(e.id, *opt_label), opt_expr)
                 }
                 ExprKind::Continue(opt_label, opt_expr) => {
-                    if let Some(expr) = opt_expr {
-                        self.dcx().emit_err(ContinueWithVal {
-                            span: e.span,
-                            start: if matches!(
-                                &expr.kind,
-                                ExprKind::Path(None, Path {segments,..}) if segments.len() == 1
-                            ) {
-                                Some(expr.span.shrink_to_lo())
-                            } else {
-                                None
-                            },
-                        });
-                    }
-                    hir::ExprKind::Continue(self.lower_jump_destination(e.id, *opt_label))
+                    let opt_expr = opt_expr.as_ref().map(|x| self.lower_expr(x));
+                    hir::ExprKind::Continue(self.lower_jump_destination(e.id, *opt_label), opt_expr)
                 }
                 ExprKind::Ret(e) => {
                     let expr = e.as_ref().map(|x| self.lower_expr(x));
@@ -1074,6 +1063,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             into_future_expr,
             arena_vec![self; awaitee_arm],
             hir::MatchSource::AwaitDesugar,
+            None,
         )
     }
 
@@ -2047,6 +2037,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             scrutinee,
             arena_vec![self; break_arm, continue_arm],
             hir::MatchSource::TryDesugar(scrutinee.hir_id),
+            None,
         )
     }
 
@@ -2121,7 +2112,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         arms: &'hir [hir::Arm<'hir>],
         source: hir::MatchSource,
     ) -> hir::Expr<'hir> {
-        self.expr(span, hir::ExprKind::Match(arg, arms, source))
+        self.expr(span, hir::ExprKind::Match(arg, arms, source, None))
     }
 
     fn expr_break(&mut self, span: Span) -> hir::Expr<'hir> {

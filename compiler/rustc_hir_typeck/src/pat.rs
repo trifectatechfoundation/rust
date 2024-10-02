@@ -935,7 +935,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 matches!(
                     n,
                     hir::Node::Expr(hir::Expr {
-                        kind: hir::ExprKind::Match(.., hir::MatchSource::Normal),
+                        kind: hir::ExprKind::Match(.., hir::MatchSource::Normal, _),
                         ..
                     })
                 )

@@ -1696,7 +1696,8 @@ pub fn walk_expr<T: MutVisitor>(vis: &mut T, Expr { kind, id, span, attrs, token
             vis.visit_block(body);
             vis.visit_span(span);
         }
-        ExprKind::Match(expr, arms, _kind) => {
+        ExprKind::Match(expr, arms, _kind, label) => {
+            visit_opt(label, |label| vis.visit_label(label));
             vis.visit_expr(expr);
             arms.flat_map_in_place(|arm| vis.flat_map_arm(arm));
         }

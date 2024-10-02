@@ -763,7 +763,7 @@ fn resolve_local<'tcx>(
                     record_rvalue_scope_if_borrow_expr(visitor, else_block, blk_id);
                 }
             }
-            hir::ExprKind::Match(_, arms, _) => {
+            hir::ExprKind::Match(_, arms, _, _) => {
                 for arm in arms {
                     record_rvalue_scope_if_borrow_expr(visitor, arm.body, blk_id);
                 }

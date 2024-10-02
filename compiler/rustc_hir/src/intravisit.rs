@@ -848,7 +848,8 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr<'v>) 
             visit_opt!(visitor, visit_label, opt_label);
             try_visit!(visitor.visit_block(block));
         }
-        ExprKind::Match(ref subexpression, arms, _) => {
+        ExprKind::Match(ref subexpression, arms, _, ref opt_label) => {
+            visit_opt!(visitor, visit_label, opt_label);
             try_visit!(visitor.visit_expr(subexpression));
             walk_list!(visitor, visit_arm, arms);
         }
@@ -894,8 +895,9 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr<'v>) 
             visit_opt!(visitor, visit_label, &destination.label);
             visit_opt!(visitor, visit_expr, opt_expr);
         }
-        ExprKind::Continue(ref destination) => {
+        ExprKind::Continue(ref destination, ref opt_expr) => {
             visit_opt!(visitor, visit_label, &destination.label);
+            visit_opt!(visitor, visit_expr, opt_expr);
         }
         ExprKind::Ret(ref optional_expression) => {
             visit_opt!(visitor, visit_expr, optional_expression);

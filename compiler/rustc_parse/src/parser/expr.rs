@@ -816,7 +816,7 @@ impl<'a> Parser<'a> {
                     ExprKind::MethodCall(_) => "a method call",
                     ExprKind::Call(_, _) => "a function call",
                     ExprKind::Await(_, _) => "`.await`",
-                    ExprKind::Match(_, _, MatchKind::Postfix) => "a postfix match",
+                    ExprKind::Match(_, _, MatchKind::Postfix, _) => "a postfix match",
                     ExprKind::Err(_) => return Ok(with_postfix),
                     _ => unreachable!("parse_dot_or_call_expr_with_ shouldn't produce this"),
                 }
@@ -1338,7 +1338,7 @@ impl<'a> Parser<'a> {
         if self.eat_keyword(exp!(Match)) {
             let match_span = self.prev_token.span;
             self.psess.gated_spans.gate(sym::postfix_match, match_span);
-            return self.parse_match_block(lo, match_span, self_arg, MatchKind::Postfix);
+            return self.parse_match_block(lo, match_span, self_arg, MatchKind::Postfix, None);
         }
 
         let fn_span_lo = self.token.span;
@@ -1458,7 +1458,7 @@ impl<'a> Parser<'a> {
                     err
                 })
             } else if this.eat_keyword(exp!(Match)) {
-                this.parse_expr_match().map_err(|mut err| {
+                this.parse_expr_match(None, lo).map_err(|mut err| {
                     err.span_label(lo, "while parsing this `match` expression");
                     err
                 })
@@ -1651,6 +1651,8 @@ impl<'a> Parser<'a> {
             self.parse_expr_for(label, lo)
         } else if self.eat_keyword(exp!(Loop)) {
             self.parse_expr_loop(label, lo)
+        } else if self.eat_keyword(exp!(Match)) {
+            self.parse_expr_match(label, lo)
         } else if self.check_noexpect(&token::OpenDelim(Delimiter::Brace))
             || self.token.is_whole_block()
         {
@@ -3003,12 +3005,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a `match ... { ... }` expression (`match` token already eaten).
-    fn parse_expr_match(&mut self) -> PResult<'a, P<Expr>> {
+    fn parse_expr_match(&mut self, opt_label: Option<Label>, lo: Span) -> PResult<'a, P<Expr>> {
         let match_span = self.prev_token.span;
         let attrs = self.parse_outer_attributes()?;
         let (scrutinee, _) = self.parse_expr_res(Restrictions::NO_STRUCT_LITERAL, attrs)?;
 
-        self.parse_match_block(match_span, match_span, scrutinee, MatchKind::Prefix)
+        self.parse_match_block(lo, match_span, scrutinee, MatchKind::Prefix, opt_label)
     }
 
     /// Parses the block of a `match expr { ... }` or a `expr.match { ... }`
@@ -3019,6 +3021,7 @@ impl<'a> Parser<'a> {
         match_span: Span,
         scrutinee: P<Expr>,
         match_kind: MatchKind,
+        opt_label: Option<Label>,
     ) -> PResult<'a, P<Expr>> {
         if let Err(mut e) = self.expect(exp!(OpenBrace)) {
             if self.token == token::Semi {
@@ -3062,7 +3065,7 @@ impl<'a> Parser<'a> {
                     });
                     return Ok(self.mk_expr_with_attrs(
                         span,
-                        ExprKind::Match(scrutinee, arms, match_kind),
+                        ExprKind::Match(scrutinee, arms, match_kind, opt_label),
                         attrs,
                     ));
                 }
@@ -3070,7 +3073,11 @@ impl<'a> Parser<'a> {
         }
         let hi = self.token.span;
         self.bump();
-        Ok(self.mk_expr_with_attrs(lo.to(hi), ExprKind::Match(scrutinee, arms, match_kind), attrs))
+        Ok(self.mk_expr_with_attrs(
+            lo.to(hi),
+            ExprKind::Match(scrutinee, arms, match_kind, opt_label),
+            attrs,
+        ))
     }
 
     /// Attempt to recover from match arm body with statements and no surrounding braces.
@@ -4082,7 +4089,7 @@ impl MutVisitor for CondChecker<'_> {
             | ExprKind::While(_, _, _)
             | ExprKind::ForLoop { .. }
             | ExprKind::Loop(_, _, _)
-            | ExprKind::Match(_, _, _)
+            | ExprKind::Match(_, _, _, _)
             | ExprKind::Closure(_)
             | ExprKind::Block(_, _)
             | ExprKind::Gen(_, _, _, _)
