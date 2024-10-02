@@ -798,18 +798,16 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 },
                 Err(err) => bug!("invalid loop id for break: {}", err),
             },
-            hir::ExprKind::Continue(dest, opt_expr) => {
-                assert!(opt_expr.is_none()); // FIXME
-                match dest.target_id {
-                    Ok(loop_id) => ExprKind::Continue {
-                        label: region::Scope {
-                            local_id: loop_id.local_id,
-                            data: region::ScopeData::Node,
-                        },
+            hir::ExprKind::Continue(dest, ref value) => match dest.target_id {
+                Ok(target_id) => ExprKind::Continue {
+                    label: region::Scope {
+                        local_id: target_id.local_id,
+                        data: region::ScopeData::Node,
                     },
-                    Err(err) => bug!("invalid loop id for continue: {}", err),
-                }
-            }
+                    value: value.map(|value| self.mirror_expr(value)),
+                },
+                Err(err) => bug!("invalid loop id for continue: {}", err),
+            },
             hir::ExprKind::Let(let_expr) => ExprKind::Let {
                 expr: self.mirror_expr(let_expr.init),
                 pat: self.pattern_from_hir(let_expr.pat),

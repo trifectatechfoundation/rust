@@ -404,9 +404,15 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
 
                 print_indented!(self, ")", depth_lvl);
             }
-            Continue { label } => {
+            Continue { label, value } => {
                 print_indented!(self, "Continue {", depth_lvl);
                 print_indented!(self, format!("label: {:?}", label), depth_lvl + 1);
+
+                if let Some(value) = value {
+                    print_indented!(self, "value:", depth_lvl + 1);
+                    self.print_expr(*value, depth_lvl + 2);
+                }
+
                 print_indented!(self, "}", depth_lvl);
             }
             Return { value } => {

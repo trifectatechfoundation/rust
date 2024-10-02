@@ -21,7 +21,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             self.thir[ast_block];
         self.in_scope((region_scope, source_info), LintLevel::Inherited, move |this| {
             if targeted_by_break {
-                this.in_breakable_scope(None, destination, span, |this| {
+                this.in_breakable_scope(None, None, Some(destination), span, |this| {
                     Some(this.ast_block_stmts(destination, block, span, stmts, expr, region_scope))
                 })
             } else {

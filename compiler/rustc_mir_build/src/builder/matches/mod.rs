@@ -371,35 +371,43 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         span: Span,
         scrutinee_span: Span,
     ) -> BlockAnd<()> {
+        // FIXME this is all wrong
         let scrutinee_place =
             unpack!(block = self.lower_scrutinee(block, scrutinee_id, scrutinee_span));
+        self.in_breakable_scope(
+            None,
+            Some(scrutinee_place.to_place(self)), /* FIXME use separate place to avoid overwriting scrutinee */
+            None,
+            span,
+            |this| {
+                let match_start_span = span.shrink_to_lo().to(scrutinee_span);
+                let patterns = arms
+                    .iter()
+                    .map(|&arm| {
+                        let arm = &self.thir[arm];
+                        let has_match_guard =
+                            if arm.guard.is_some() { HasMatchGuard::Yes } else { HasMatchGuard::No };
+                        (&*arm.pattern, has_match_guard)
+                    })
+                    .collect();
+                let built_tree = this.lower_match_tree(
+                    block,
+                    scrutinee_span,
+                    &scrutinee_place,
+                    match_start_span,
+                    patterns,
+                    false,
+                );
 
-        let match_start_span = span.shrink_to_lo().to(scrutinee_span);
-        let patterns = arms
-            .iter()
-            .map(|&arm| {
-                let arm = &self.thir[arm];
-                let has_match_guard =
-                    if arm.guard.is_some() { HasMatchGuard::Yes } else { HasMatchGuard::No };
-                (&*arm.pattern, has_match_guard)
-            })
-            .collect();
-        let built_tree = self.lower_match_tree(
-            block,
-            scrutinee_span,
-            &scrutinee_place,
-            match_start_span,
-            patterns,
-            false,
-        );
-
-        self.lower_match_arms(
-            destination,
-            scrutinee_place,
-            scrutinee_span,
-            arms,
-            built_tree,
-            self.source_info(span),
+                Some(this.lower_match_arms(
+                    destination,
+                    scrutinee_place,
+                    scrutinee_span,
+                    arms,
+                    built_tree,
+                    this.source_info(span),
+                ))
+            },
         )
     }
 

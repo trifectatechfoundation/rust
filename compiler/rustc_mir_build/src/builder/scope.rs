@@ -166,9 +166,12 @@ struct BreakableScope<'tcx> {
     region_scope: region::Scope,
     /// The destination of the loop/block expression itself (i.e., where to put
     /// the result of a `break` or `return` expression)
-    break_destination: Place<'tcx>,
+    break_destination: Option<Place<'tcx>>,
     /// Drops that happen on the `break`/`return` path.
     break_drops: DropTree,
+    /// The scrurinee of the match expression itself (i.e., where to put
+    /// the result of a `continue` expression)
+    continue_place: Option<Place<'tcx>>,
     /// Drops that happen on the `continue` path.
     continue_drops: Option<DropTree>,
 }
@@ -503,7 +506,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     pub(crate) fn in_breakable_scope<F>(
         &mut self,
         loop_block: Option<BasicBlock>,
-        break_destination: Place<'tcx>,
+        continue_place: Option<Place<'tcx>>,
+        break_destination: Option<Place<'tcx>>,
         span: Span,
         f: F,
     ) -> BlockAnd<()>
@@ -515,6 +519,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             region_scope,
             break_destination,
             break_drops: DropTree::new(),
+            continue_place,
             continue_drops: loop_block.map(|_| DropTree::new()),
         };
         self.scopes.breakable_scopes.push(scope);
@@ -662,19 +667,20 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let (break_index, destination) = match target {
             BreakableTarget::Return => {
                 let scope = &self.scopes.breakable_scopes[0];
-                if scope.break_destination != Place::return_place() {
+                if scope.break_destination != Some(Place::return_place()) {
                     span_bug!(span, "`return` in item with no return scope");
                 }
-                (0, Some(scope.break_destination))
+                (0, scope.break_destination)
             }
             BreakableTarget::Break(scope) => {
                 let break_index = get_scope_index(scope);
                 let scope = &self.scopes.breakable_scopes[break_index];
-                (break_index, Some(scope.break_destination))
+                (break_index, scope.break_destination)
             }
             BreakableTarget::Continue(scope) => {
                 let break_index = get_scope_index(scope);
-                (break_index, None)
+                let scope = &self.scopes.breakable_scopes[break_index];
+                (break_index, scope.continue_place)
             }
         };
 
