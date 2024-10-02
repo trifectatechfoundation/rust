@@ -350,16 +350,22 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         span: Span,
         scrutinee_span: Span,
     ) -> BlockAnd<()> {
-        // FIXME this is all wrong
         let scrutinee_place =
             unpack!(block = self.lower_scrutinee(block, scrutinee_id, scrutinee_span));
-        self.in_breakable_scope(
-            None,
-            Some(scrutinee_place.to_place(self)), /* FIXME use separate place to avoid overwriting scrutinee */
-            None,
+
+        let source_info = self.source_info(span);
+
+        let loop_block = self.cfg.start_new_block();
+
+        // Start the loop.
+        self.cfg.goto(block, source_info, loop_block);
+
+        self.in_continuable_scope(
+            loop_block,
+            scrutinee_place.to_place(self), /* FIXME use separate place to avoid overwriting scrutinee */
             span,
             |this| {
-                let arms = arms.iter().map(|arm| &this.thir[*arm]);
+                let arms = arms.iter().map(|arm| &self.thir[*arm]);
                 let match_start_span = span.shrink_to_lo().to(scrutinee_span);
                 let patterns = arms
                     .clone()
@@ -373,7 +379,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     })
                     .collect();
                 let built_tree = this.lower_match_tree(
-                    block,
+                    loop_block,
                     scrutinee_span,
                     &scrutinee_place,
                     match_start_span,

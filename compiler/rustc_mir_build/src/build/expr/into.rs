@@ -218,7 +218,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // Start the loop.
                 this.cfg.goto(block, source_info, loop_block);
 
-                this.in_breakable_scope(Some(loop_block), None, Some(destination), expr_span, move |this| {
+                this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
                     // conduct the test, if necessary
                     let body_block = this.cfg.start_new_block();
                     this.cfg.terminate(loop_block, source_info, TerminatorKind::FalseUnwind {
