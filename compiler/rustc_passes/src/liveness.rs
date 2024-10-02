@@ -926,6 +926,8 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                 //
                 let ln = self.live_node(expr.hir_id, expr.span);
                 self.init_empty(ln, succ);
+                // FIXME maybe handle as loop if continue 'match_label?
+                self.cont_ln.insert(expr.hir_id, ln);
                 for arm in arms {
                     let body_succ = self.propagate_through_expr(arm.body, succ);
 

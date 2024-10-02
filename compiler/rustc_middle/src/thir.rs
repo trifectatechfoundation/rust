@@ -422,6 +422,7 @@ pub enum ExprKind<'tcx> {
     /// A `continue` expression.
     Continue {
         label: region::Scope,
+        value: Option<ExprId>,
     },
     /// A `return` expression.
     Return {

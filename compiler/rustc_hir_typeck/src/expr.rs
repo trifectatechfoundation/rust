@@ -477,7 +477,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 self.check_expr_break(destination, expr_opt.as_deref(), expr)
             }
             ExprKind::Continue(destination, opt_expr) => {
-                assert!(opt_expr.is_none()); // FIXME
+                if let Some(expr) = opt_expr {
+                    // FIXME check if type matches with match scrutinee
+                    self.check_expr(expr);
+                }
+
                 if destination.target_id.is_ok() {
                     tcx.types.never
                 } else {

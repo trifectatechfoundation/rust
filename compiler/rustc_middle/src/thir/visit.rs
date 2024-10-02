@@ -100,7 +100,11 @@ pub fn walk_expr<'thir, 'tcx: 'thir, V: Visitor<'thir, 'tcx>>(
                 visitor.visit_expr(&visitor.thir()[value])
             }
         }
-        Continue { label: _ } => {}
+        Continue { value, label: _ } => {
+            if let Some(value) = value {
+                visitor.visit_expr(&visitor.thir()[value])
+            }
+        }
         Return { value } => {
             if let Some(value) = value {
                 visitor.visit_expr(&visitor.thir()[value])
