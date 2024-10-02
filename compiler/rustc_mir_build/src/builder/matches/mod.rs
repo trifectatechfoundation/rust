@@ -371,13 +371,23 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         span: Span,
         scrutinee_span: Span,
     ) -> BlockAnd<()> {
-        // FIXME this is all wrong
         let scrutinee_place =
             unpack!(block = self.lower_scrutinee(block, scrutinee_id, scrutinee_span));
-        self.in_breakable_scope(
-            None,
-            Some(scrutinee_place.to_place(self)), /* FIXME use separate place to avoid overwriting scrutinee */
-            None,
+
+        let source_info = self.source_info(span);
+
+        let loop_block = self.cfg.start_new_block();
+
+        // Start the loop.
+        // FIXME(labeled_match) only split block if there are continue or break to this match
+        self.cfg.goto(block, source_info, loop_block);
+
+        // FIXME(labeled_match) make each continue emit a separate SwitchInt or in case of const value a FalseEdge
+        // together with a direct Jump.
+        // FIXME(labeled_match) maybe allow break inside of labeled match too like Zig?
+        self.in_continuable_scope(
+            loop_block,
+            scrutinee_place.to_place(self), /* FIXME(labeled_match) use separate place to avoid overwriting scrutinee */
             span,
             |this| {
                 let match_start_span = span.shrink_to_lo().to(scrutinee_span);
@@ -391,7 +401,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     })
                     .collect();
                 let built_tree = this.lower_match_tree(
-                    block,
+                    loop_block,
                     scrutinee_span,
                     &scrutinee_place,
                     match_start_span,

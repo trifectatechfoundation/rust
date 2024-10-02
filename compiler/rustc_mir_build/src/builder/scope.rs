@@ -168,7 +168,7 @@ struct BreakableScope<'tcx> {
     /// the result of a `break` or `return` expression)
     break_destination: Option<Place<'tcx>>,
     /// Drops that happen on the `break`/`return` path.
-    break_drops: DropTree,
+    break_drops: Option<DropTree>,
     /// The scrurinee of the match expression itself (i.e., where to put
     /// the result of a `continue` expression)
     continue_place: Option<Place<'tcx>>,
@@ -506,8 +506,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     pub(crate) fn in_breakable_scope<F>(
         &mut self,
         loop_block: Option<BasicBlock>,
-        continue_place: Option<Place<'tcx>>,
-        break_destination: Option<Place<'tcx>>,
+        break_destination: Place<'tcx>,
         span: Span,
         f: F,
     ) -> BlockAnd<()>
@@ -517,9 +516,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let region_scope = self.scopes.topmost();
         let scope = BreakableScope {
             region_scope,
-            break_destination,
-            break_drops: DropTree::new(),
-            continue_place,
+            break_destination: Some(break_destination),
+            break_drops: Some(DropTree::new()),
+            continue_place: None,
             continue_drops: loop_block.map(|_| DropTree::new()),
         };
         self.scopes.breakable_scopes.push(scope);
@@ -527,7 +526,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let breakable_scope = self.scopes.breakable_scopes.pop().unwrap();
         assert!(breakable_scope.region_scope == region_scope);
         let break_block =
-            self.build_exit_tree(breakable_scope.break_drops, region_scope, span, None);
+            self.build_exit_tree(breakable_scope.break_drops.unwrap(), region_scope, span, None);
         if let Some(drops) = breakable_scope.continue_drops {
             self.build_exit_tree(drops, region_scope, span, loop_block);
         }
@@ -550,6 +549,40 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 target.unit()
             }
         }
+    }
+
+    ///  Start a continuable scope, which tracks where `continue`, `break` and
+    ///  `return` should branch to.
+    pub(crate) fn in_continuable_scope<F>(
+        &mut self,
+        loop_block: BasicBlock,
+        continue_place: Place<'tcx>,
+        span: Span,
+        f: F,
+    ) -> BlockAnd<()>
+    where
+        F: FnOnce(&mut Builder<'a, 'tcx>) -> Option<BlockAnd<()>>,
+    {
+        let region_scope = self.scopes.topmost();
+        let scope = BreakableScope {
+            region_scope,
+            break_destination: None,
+            break_drops: None,
+            continue_place: Some(continue_place),
+            continue_drops: Some(DropTree::new()),
+        };
+        self.scopes.breakable_scopes.push(scope);
+        let normal_exit_block = f(self);
+        let breakable_scope = self.scopes.breakable_scopes.pop().unwrap();
+        assert!(breakable_scope.region_scope == region_scope);
+        // FIXME(labeled_match) handle drop for regular exit
+        self.build_exit_tree(
+            breakable_scope.continue_drops.unwrap(),
+            region_scope,
+            span,
+            Some(loop_block),
+        );
+        normal_exit_block.unwrap()
     }
 
     /// Start an if-then scope which tracks drop for `if` expressions and `if`
@@ -710,20 +743,33 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         let region_scope = self.scopes.breakable_scopes[break_index].region_scope;
         let scope_index = self.scopes.scope_index(region_scope, span);
-        let drops = if destination.is_some() {
-            &mut self.scopes.breakable_scopes[break_index].break_drops
-        } else {
-            let Some(drops) = self.scopes.breakable_scopes[break_index].continue_drops.as_mut()
-            else {
-                self.tcx.dcx().span_delayed_bug(
-                    source_info.span,
-                    "unlabelled `continue` within labelled block",
-                );
-                self.cfg.terminate(block, source_info, TerminatorKind::Unreachable);
+        let drops = match target {
+            BreakableTarget::Break(..) | BreakableTarget::Return => {
+                let Some(drops) = self.scopes.breakable_scopes[break_index].break_drops.as_mut()
+                else {
+                    self.tcx.dcx().span_delayed_bug(
+                        source_info.span,
+                        "unlabelled `break` within labelled block",
+                    );
+                    self.cfg.terminate(block, source_info, TerminatorKind::Unreachable);
 
-                return self.cfg.start_new_block().unit();
-            };
-            drops
+                    return self.cfg.start_new_block().unit();
+                };
+                drops
+            }
+            BreakableTarget::Continue(..) => {
+                let Some(drops) = self.scopes.breakable_scopes[break_index].continue_drops.as_mut()
+                else {
+                    self.tcx.dcx().span_delayed_bug(
+                        source_info.span,
+                        "unlabelled `continue` within labelled block",
+                    );
+                    self.cfg.terminate(block, source_info, TerminatorKind::Unreachable);
+
+                    return self.cfg.start_new_block().unit();
+                };
+                drops
+            }
         };
 
         let drop_idx = self.scopes.scopes[scope_index + 1..]

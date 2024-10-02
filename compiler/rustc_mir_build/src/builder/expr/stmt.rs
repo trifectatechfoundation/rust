@@ -87,7 +87,6 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 block.unit()
             }
             ExprKind::Continue { label, value } => {
-                // FIXME
                 this.break_scope(block, value, BreakableTarget::Continue(label), source_info)
             }
             ExprKind::Break { label, value } => {

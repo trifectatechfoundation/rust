@@ -217,36 +217,29 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // Start the loop.
                 this.cfg.goto(block, source_info, loop_block);
 
-                this.in_breakable_scope(
-                    Some(loop_block),
-                    None,
-                    Some(destination),
-                    expr_span,
-                    move |this| {
-                        // conduct the test, if necessary
-                        let body_block = this.cfg.start_new_block();
-                        this.cfg.terminate(
-                            loop_block,
-                            source_info,
-                            TerminatorKind::FalseUnwind {
-                                real_target: body_block,
-                                unwind: UnwindAction::Continue,
-                            },
-                        );
-                        this.diverge_from(loop_block);
+                this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
+                    // conduct the test, if necessary
+                    let body_block = this.cfg.start_new_block();
+                    this.cfg.terminate(
+                        loop_block,
+                        source_info,
+                        TerminatorKind::FalseUnwind {
+                            real_target: body_block,
+                            unwind: UnwindAction::Continue,
+                        },
+                    );
+                    this.diverge_from(loop_block);
 
-                        // The “return” value of the loop body must always be a unit. We therefore
-                        // introduce a unit temporary as the destination for the loop body.
-                        let tmp = this.get_unit_temp();
-                        // Execute the body, branching back to the test.
-                        let body_block_end =
-                            this.expr_into_dest(tmp, body_block, body).into_block();
-                        this.cfg.goto(body_block_end, source_info, loop_block);
+                    // The “return” value of the loop body must always be a unit. We therefore
+                    // introduce a unit temporary as the destination for the loop body.
+                    let tmp = this.get_unit_temp();
+                    // Execute the body, branching back to the test.
+                    let body_block_end = this.expr_into_dest(tmp, body_block, body).into_block();
+                    this.cfg.goto(body_block_end, source_info, loop_block);
 
-                        // Loops are only exited by `break` expressions.
-                        None
-                    },
-                )
+                    // Loops are only exited by `break` expressions.
+                    None
+                })
             }
             ExprKind::Call { ty: _, fun, ref args, from_hir_call, fn_span } => {
                 let fun = unpack!(block = this.as_local_operand(block, fun));

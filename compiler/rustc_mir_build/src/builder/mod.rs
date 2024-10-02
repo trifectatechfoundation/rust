@@ -537,7 +537,7 @@ fn construct_fn<'tcx>(
         // Attribute epilogue to function's closing brace
         let fn_end = span_with_body.shrink_to_hi();
         let return_block = builder
-            .in_breakable_scope(None, None, Some(Place::return_place()), fn_end, |builder| {
+            .in_breakable_scope(None, Place::return_place(), fn_end, |builder| {
                 Some(builder.in_scope(arg_scope_s, LintLevel::Inherited, |builder| {
                     builder.args_and_body(START_BLOCK, arguments, arg_scope, expr)
                 }))
