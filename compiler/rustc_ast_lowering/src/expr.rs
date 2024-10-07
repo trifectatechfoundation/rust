@@ -15,14 +15,13 @@ use thin_vec::{ThinVec, thin_vec};
 
 use super::errors::{
     AsyncCoroutinesNotSupported, AwaitOnlyInAsyncFnAndBlocks, BaseExpressionDoubleDot,
-    ClosureCannotBeStatic, CoroutineTooManyParameters,
+    ClosureCannotBeStatic, ContinueWithVal, CoroutineTooManyParameters,
     FunctionalRecordUpdateDestructuringAssignment, InclusiveRangeWithNoEnd, MatchArmWithNoBody,
-    NeverPatternWithBody, NeverPatternWithGuard, UnderscoreExprLhsAssign,
+    NeverPatternWithBody, NeverPatternWithGuard, UnderscoreExprLhsAssign, YieldInClosure,
 };
 use super::{
     GenericArgsMode, ImplTraitContext, LoweringContext, ParamMode, ResolverAstLoweringExt,
 };
-use crate::errors::YieldInClosure;
 use crate::{AllowReturnTypeNotation, FnDeclKind, ImplTraitPosition, fluent_generated};
 
 impl<'hir> LoweringContext<'_, 'hir> {
@@ -291,7 +290,20 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     let opt_expr = opt_expr.as_ref().map(|x| self.lower_expr(x));
                     hir::ExprKind::Break(self.lower_jump_destination(e.id, *opt_label), opt_expr)
                 }
-                ExprKind::Continue(opt_label) => {
+                ExprKind::Continue(opt_label, opt_expr) => {
+                    if let Some(expr) = opt_expr {
+                        self.dcx().emit_err(ContinueWithVal {
+                            span: e.span,
+                            start: if matches!(
+                                &expr.kind,
+                                ExprKind::Path(None, Path {segments,..}) if segments.len() == 1
+                            ) {
+                                Some(expr.span.shrink_to_lo())
+                            } else {
+                                None
+                            },
+                        });
+                    }
                     hir::ExprKind::Continue(self.lower_jump_destination(e.id, *opt_label))
                 }
                 ExprKind::Ret(e) => {

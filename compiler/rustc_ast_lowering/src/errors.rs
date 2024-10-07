@@ -451,3 +451,13 @@ pub(crate) struct YieldInClosure {
     #[suggestion(code = "#[coroutine] ", applicability = "maybe-incorrect", style = "verbose")]
     pub suggestion: Option<Span>,
 }
+
+
+#[derive(Diagnostic)]
+#[diag(ast_lowering_continue_with_val)]
+pub(crate) struct ContinueWithVal {
+    #[primary_span]
+    pub span: Span,
+    #[suggestion(code = "'", applicability = "machine-applicable", style = "verbose")]
+    pub start: Option<Span>,
+}
