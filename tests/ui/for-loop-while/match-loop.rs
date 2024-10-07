@@ -15,5 +15,5 @@ fn main() {
 
 #[inline(never)]
 fn rand() -> Foo {
-    Foo::Bar // Chosen without dice roll
+    std::process::exit(0)//Foo::Bar // Chosen without dice roll
 }

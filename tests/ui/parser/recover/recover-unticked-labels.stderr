@@ -27,17 +27,6 @@ LL |     'label: loop { continue label };
    |     |
    |     a label with a similar name exists
 
-error: `continue` doesn't accept a value
-  --> $DIR/recover-unticked-labels.rs:6:20
-   |
-LL |     'label: loop { continue label };
-   |                    ^^^^^^^^^^^^^^
-   |
-help: maybe you meant to use a label instead
-   |
-LL |     'label: loop { continue 'label };
-   |                             +
-
-error: aborting due to 4 previous errors
+error: aborting due to 3 previous errors
 
 For more information about this error, try `rustc --explain E0425`.
