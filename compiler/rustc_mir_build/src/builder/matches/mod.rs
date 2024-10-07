@@ -382,6 +382,25 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         // FIXME(labeled_match) only split block if there are continue or break to this match
         self.cfg.goto(block, source_info, loop_block);
 
+        let match_start_span = span.shrink_to_lo().to(scrutinee_span);
+        let patterns = arms
+            .iter()
+            .map(|&arm| {
+                let arm = &self.thir[arm];
+                let has_match_guard =
+                    if arm.guard.is_some() { HasMatchGuard::Yes } else { HasMatchGuard::No };
+                (&*arm.pattern, has_match_guard)
+            })
+            .collect();
+        let built_tree = self.lower_match_tree(
+            loop_block,
+            scrutinee_span,
+            &scrutinee_place,
+            match_start_span,
+            patterns,
+            false,
+        );
+
         // FIXME(labeled_match) make each continue emit a separate SwitchInt or in case of const value a FalseEdge
         // together with a direct Jump.
         // FIXME(labeled_match) maybe allow break inside of labeled match too like Zig?
@@ -390,24 +409,6 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             scrutinee_place.to_place(self), /* FIXME(labeled_match) use separate place to avoid overwriting scrutinee */
             span,
             |this| {
-                let match_start_span = span.shrink_to_lo().to(scrutinee_span);
-                let patterns = arms
-                    .iter()
-                    .map(|&arm| {
-                        let arm = &self.thir[arm];
-                        let has_match_guard =
-                            if arm.guard.is_some() { HasMatchGuard::Yes } else { HasMatchGuard::No };
-                        (&*arm.pattern, has_match_guard)
-                    })
-                    .collect();
-                let built_tree = this.lower_match_tree(
-                    loop_block,
-                    scrutinee_span,
-                    &scrutinee_place,
-                    match_start_span,
-                    patterns,
-                    false,
-                );
 
                 Some(this.lower_match_arms(
                     destination,

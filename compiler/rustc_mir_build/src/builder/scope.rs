@@ -174,6 +174,7 @@ struct BreakableScope<'tcx> {
     continue_place: Option<Place<'tcx>>,
     /// Drops that happen on the `continue` path.
     continue_drops: Option<DropTree>,
+    continue_block: Option<BasicBlock>,
 }
 
 #[derive(Debug)]
@@ -520,6 +521,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             break_drops: Some(DropTree::new()),
             continue_place: None,
             continue_drops: loop_block.map(|_| DropTree::new()),
+            continue_block: None,
         };
         self.scopes.breakable_scopes.push(scope);
         let normal_exit_block = f(self);
@@ -570,6 +572,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             break_drops: None,
             continue_place: Some(continue_place),
             continue_drops: Some(DropTree::new()),
+            continue_block: Some(loop_block),
         };
         self.scopes.breakable_scopes.push(scope);
         let normal_exit_block = f(self);
@@ -739,6 +742,18 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     self.cfg.push_coverage_span_marker(block, source_info);
                 }
             }
+        }
+
+        // FIXME(labeled_match) this is a hack which only duplicates the head of the match tree
+        match (target, self.scopes.breakable_scopes[break_index].continue_block) {
+            (BreakableTarget::Continue(_), Some(continue_block)) => {
+                let extra_statements = self.cfg.basic_blocks[continue_block].statements.clone();
+                self.cfg.basic_blocks[block].statements.extend(extra_statements);
+                self.cfg.basic_blocks[block].terminator =
+                    Some(self.cfg.basic_blocks[continue_block].terminator().clone());
+                return self.cfg.start_new_block().unit();
+            }
+            _ => {}
         }
 
         let region_scope = self.scopes.breakable_scopes[break_index].region_scope;
