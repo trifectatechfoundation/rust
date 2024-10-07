@@ -87,7 +87,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;
-use rustc_middle::mir::*;
+use rustc_middle::mir::{self, *};
 use rustc_middle::thir::{ExprId, LintLevel};
 use rustc_middle::{bug, span_bug};
 use rustc_session::lint::Level;
@@ -747,11 +747,99 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         // FIXME(labeled_match) this is a hack which only duplicates the head of the match tree
         match (target, self.scopes.breakable_scopes[break_index].continue_block) {
             (BreakableTarget::Continue(_), Some(continue_block)) => {
-                let extra_statements = self.cfg.basic_blocks[continue_block].statements.clone();
-                self.cfg.basic_blocks[block].statements.extend(extra_statements);
-                self.cfg.basic_blocks[block].terminator =
-                    Some(self.cfg.basic_blocks[continue_block].terminator().clone());
-                return self.cfg.start_new_block().unit();
+                match self.cfg.basic_blocks[continue_block].terminator().kind {
+                    TerminatorKind::SwitchInt {
+                        discr: mir::Operand::Move(mir::Place { local: discr, projection }),
+                        ref targets,
+                    } if projection.is_empty() => {
+                        match self.cfg.basic_blocks[continue_block].statements.last() {
+                            Some(Statement { kind: StatementKind::Assign(assign), .. }) => {
+                                match **assign {
+                                    (
+                                        mir::Place { local: try_discr, projection },
+                                        Rvalue::Discriminant(mir::Place {
+                                            local: enum_local,
+                                            projection: projection2,
+                                        }),
+                                    ) if projection.is_empty()
+                                        && projection2.is_empty()
+                                        && discr == try_discr
+                                        && self.cfg.basic_blocks[continue_block]
+                                            .statements
+                                            .len()
+                                            == 1 =>
+                                    {
+                                        match self.cfg.basic_blocks[block].statements.last() {
+                                            Some(Statement {
+                                                kind: StatementKind::Assign(assign),
+                                                ..
+                                            }) => match **assign {
+                                                (
+                                                    mir::Place {
+                                                        local: try_enum_local,
+                                                        projection,
+                                                    },
+                                                    Rvalue::Aggregate(
+                                                        ref aggr_kind,
+                                                        ref aggr_fields,
+                                                    ), //Rvalue::Use(Operand::Constant(ref const_)),
+                                                ) if enum_local == try_enum_local
+                                                    && projection.is_empty()
+                                                    && aggr_fields.is_empty() =>
+                                                {
+                                                    match &**aggr_kind {
+                                                        AggregateKind::Adt(
+                                                            _,
+                                                            discr,
+                                                            _,
+                                                            None,
+                                                            None,
+                                                        ) => {
+                                                            let target = targets.target_for_value(
+                                                                discr.as_u32().into(),
+                                                            );
+                                                            let extra_statements = self
+                                                                .cfg
+                                                                .basic_blocks[continue_block]
+                                                                .statements
+                                                                .clone();
+                                                            self.cfg.basic_blocks[block]
+                                                                .statements
+                                                                .extend(extra_statements);
+                                                            self.cfg.basic_blocks[block]
+                                                                .terminator = Some(
+                                                                self.cfg.basic_blocks
+                                                                    [continue_block]
+                                                                    .terminator()
+                                                                    .clone(),
+                                                            );
+                                                            self.cfg.basic_blocks[block]
+                                                                .terminator
+                                                                .as_mut()
+                                                                .unwrap()
+                                                                .kind =
+                                                                TerminatorKind::Goto { target };
+                                                            return self
+                                                                .cfg
+                                                                .start_new_block()
+                                                                .unit();
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+                                                _ => {}
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }
