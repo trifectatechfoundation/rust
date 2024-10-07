@@ -1760,8 +1760,9 @@ pub fn walk_expr<T: MutVisitor>(vis: &mut T, Expr { kind, id, span, attrs, token
             visit_opt(label, |label| vis.visit_label(label));
             visit_opt(expr, |expr| vis.visit_expr(expr));
         }
-        ExprKind::Continue(label) => {
+        ExprKind::Continue(label, expr) => {
             visit_opt(label, |label| vis.visit_label(label));
+            visit_opt(expr, |expr| vis.visit_expr(expr));
         }
         ExprKind::Ret(expr) => {
             visit_opt(expr, |expr| vis.visit_expr(expr));

@@ -1479,7 +1479,7 @@ impl<'a> Parser<'a> {
             } else if this.eat_keyword(exp!(Return)) {
                 this.parse_expr_return()
             } else if this.eat_keyword(exp!(Continue)) {
-                this.parse_expr_continue(lo)
+                this.parse_expr_continue()
             } else if this.eat_keyword(exp!(Break)) {
                 this.parse_expr_break()
             } else if this.eat_keyword(exp!(Yield)) {
@@ -1895,21 +1895,68 @@ impl<'a> Parser<'a> {
         self.maybe_recover_from_bad_qpath(expr)
     }
 
-    /// Parse `"continue" label?`.
-    fn parse_expr_continue(&mut self, lo: Span) -> PResult<'a, P<Expr>> {
+    /// Parse `"continue" (('label (:? expr)?) | expr?)` with `"break"` token already
+    /// eaten. If the label is followed immediately by a `:` token, the label and `:`
+    /// are parsed as part of the expression (i.e. a labeled loop).
+    // FIXME(labeled_match) add back some comment about confusion that parse_expr_break also has
+    fn parse_expr_continue(&mut self) -> PResult<'a, P<Expr>> {
+        let lo = self.prev_token.span;
         let mut label = self.eat_label();
-
-        // Recover `continue label` -> `continue 'label`
-        if self.may_recover()
-            && label.is_none()
-            && let Some((ident, _)) = self.token.ident()
+        let kind = if self.token == token::Colon
+            && let Some(label) = label.take()
         {
-            self.bump();
-            label = Some(self.recover_ident_into_label(ident));
-        }
+            // The value expression can be a labeled loop, see issue #86948, e.g.:
+            // `loop { break 'label: loop { break 'label 42; }; }`
+            let lexpr = self.parse_expr_labeled(label, true)?;
+            // FIXME(labeled_match) error
+            self.dcx().emit_err(errors::LabeledLoopInBreak {
+                span: lexpr.span,
+                sub: errors::WrapInParentheses::Expression {
+                    left: lexpr.span.shrink_to_lo(),
+                    right: lexpr.span.shrink_to_hi(),
+                },
+            });
+            Some(lexpr)
+        } else if self.token != token::OpenDelim(Delimiter::Brace)
+            || !self.restrictions.contains(Restrictions::NO_STRUCT_LITERAL)
+        {
+            let mut expr = self.parse_expr_opt()?;
+            if let Some(expr) = &mut expr {
+                if label.is_some()
+                    && matches!(
+                        expr.kind,
+                        ExprKind::While(_, _, None)
+                            | ExprKind::ForLoop { label: None, .. }
+                            | ExprKind::Loop(_, None, _)
+                            | ExprKind::Block(_, None)
+                    )
+                {
+                    self.psess.buffer_lint(
+                        BREAK_WITH_LABEL_AND_LOOP,
+                        lo.to(expr.span),
+                        ast::CRATE_NODE_ID,
+                        BuiltinLintDiag::BreakWithLabelAndLoop(expr.span),
+                    );
+                }
 
-        let kind = ExprKind::Continue(label);
-        Ok(self.mk_expr(lo.to(self.prev_token.span), kind))
+                // Recover `continue label aaaaa`
+                if self.may_recover()
+                    && let ExprKind::Path(None, p) = &expr.kind
+                    && let [segment] = &*p.segments
+                    && let &ast::PathSegment { ident, args: None, .. } = segment
+                    && let Some(next) = self.parse_expr_opt()?
+                {
+                    label = Some(self.recover_ident_into_label(ident));
+                    *expr = next;
+                }
+            }
+
+            expr
+        } else {
+            None
+        };
+        let expr = self.mk_expr(lo.to(self.prev_token.span), ExprKind::Continue(label, kind));
+        self.maybe_recover_from_bad_qpath(expr)
     }
 
     /// Parse `"yield" expr?`.
@@ -4043,7 +4090,7 @@ impl MutVisitor for CondChecker<'_> {
             | ExprKind::Underscore
             | ExprKind::Path(_, _)
             | ExprKind::Break(_, _)
-            | ExprKind::Continue(_)
+            | ExprKind::Continue(_, _)
             | ExprKind::Ret(_)
             | ExprKind::InlineAsm(_)
             | ExprKind::OffsetOf(_, _)

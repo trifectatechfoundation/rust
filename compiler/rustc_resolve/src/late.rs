@@ -4675,7 +4675,7 @@ impl<'a, 'ast, 'ra: 'ast, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
                 }
             }
 
-            ExprKind::Break(Some(label), _) | ExprKind::Continue(Some(label)) => {
+            ExprKind::Break(Some(label), _) | ExprKind::Continue(Some(label), _) => {
                 match self.resolve_label(label.ident) {
                     Ok((node_id, _)) => {
                         // Since this res is a label, it is never read.

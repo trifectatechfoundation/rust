@@ -671,11 +671,22 @@ impl<'a> State<'a> {
                     );
                 }
             }
-            ast::ExprKind::Continue(opt_label) => {
+            ast::ExprKind::Continue(opt_label, opt_expr) => {
                 self.word("continue");
                 if let Some(label) = opt_label {
                     self.space();
                     self.print_ident(label.ident);
+                }
+                if let Some(expr) = opt_expr {
+                    self.space();
+                    self.print_expr_cond_paren(
+                        expr,
+                        // Parenthesize if required by precedence, or in the
+                        // case of `continue 'inner: loop { continue 'inner 1 } + 1`
+                        expr.precedence() < ExprPrecedence::Jump
+                            || (opt_label.is_none() && classify::leading_labeled_expr(expr)),
+                        fixup.subsequent_subexpression(),
+                    );
                 }
             }
             ast::ExprKind::Ret(result) => {

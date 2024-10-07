@@ -1224,8 +1224,9 @@ pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expression: &'a Expr) -> V
             visit_opt!(visitor, visit_label, opt_label);
             visit_opt!(visitor, visit_expr, opt_expr);
         }
-        ExprKind::Continue(opt_label) => {
+        ExprKind::Continue(opt_label, opt_expr) => {
             visit_opt!(visitor, visit_label, opt_label);
+            visit_opt!(visitor, visit_expr, opt_expr);
         }
         ExprKind::Ret(optional_expression) => {
             visit_opt!(visitor, visit_expr, optional_expression);

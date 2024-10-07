@@ -177,6 +177,7 @@ pub fn expr_trailing_brace(mut expr: &ast::Expr) -> Option<TrailingBrace<'_>> {
             | AssignOp(_, _, e)
             | Binary(_, _, e)
             | Break(_, Some(e))
+            | Continue(_, Some(e))
             | Let(_, e, _, _)
             | Range(_, Some(e), _)
             | Ret(Some(e))
@@ -228,7 +229,7 @@ pub fn expr_trailing_brace(mut expr: &ast::Expr) -> Option<TrailingBrace<'_>> {
             | Index(_, _, _)
             | Underscore
             | Path(_, _)
-            | Continue(_)
+            | Continue(_, None)
             | Repeat(_, _)
             | Paren(_)
             | Try(_)

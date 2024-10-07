@@ -195,3 +195,7 @@ ast_lowering_yield = yield syntax is experimental
 ast_lowering_yield_in_closure =
     `yield` can only be used in `#[coroutine]` closures, or `gen` blocks
     .suggestion = use `#[coroutine]` to make this closure a coroutine
+
+ast_lowering_continue_with_val =
+    `continue` doesn't accept a value
+    .suggestion = maybe you meant to use a label instead

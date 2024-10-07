@@ -1561,8 +1561,8 @@ pub enum ExprKind {
     AddrOf(BorrowKind, Mutability, P<Expr>),
     /// A `break`, with an optional label to break, and an optional expression.
     Break(Option<Label>, Option<P<Expr>>),
-    /// A `continue`, with an optional label.
-    Continue(Option<Label>),
+    /// A `continue`, with an optional label and an optional expression.
+    Continue(Option<Label>, Option<P<Expr>>),
     /// A `return`, with an optional value to be returned.
     Ret(Option<P<Expr>>),
 

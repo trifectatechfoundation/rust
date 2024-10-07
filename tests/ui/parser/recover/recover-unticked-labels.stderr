@@ -9,17 +9,6 @@ help: labels start with a tick
 LL |     'label: loop { break 'label 0 };
    |                          +
 
-error: expected a label, found an identifier
-  --> $DIR/recover-unticked-labels.rs:6:29
-   |
-LL |     'label: loop { continue label };
-   |                             ^^^^^
-   |
-help: labels start with a tick
-   |
-LL |     'label: loop { continue 'label };
-   |                             +
-
 error[E0425]: cannot find value `label` in this scope
   --> $DIR/recover-unticked-labels.rs:4:26
    |
@@ -30,6 +19,25 @@ LL |     'label: loop { break label };
    |     |                    help: use the similarly named label: `'label`
    |     a label with a similar name exists
 
-error: aborting due to 3 previous errors
+error[E0425]: cannot find value `label` in this scope
+  --> $DIR/recover-unticked-labels.rs:6:29
+   |
+LL |     'label: loop { continue label };
+   |     ------                  ^^^^^ not found in this scope
+   |     |
+   |     a label with a similar name exists
+
+error: `continue` doesn't accept a value
+  --> $DIR/recover-unticked-labels.rs:6:20
+   |
+LL |     'label: loop { continue label };
+   |                    ^^^^^^^^^^^^^^
+   |
+help: maybe you meant to use a label instead
+   |
+LL |     'label: loop { continue 'label };
+   |                             +
+
+error: aborting due to 4 previous errors
 
 For more information about this error, try `rustc --explain E0425`.
