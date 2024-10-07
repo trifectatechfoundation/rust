@@ -478,7 +478,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             ExprKind::Continue(destination, opt_expr) => {
                 if let Some(expr) = opt_expr {
-                    // FIXME check if type matches with match scrutinee
+                    // FIXME(labeled_match) check if type matches with match scrutinee
                     self.check_expr(expr);
                 }
 

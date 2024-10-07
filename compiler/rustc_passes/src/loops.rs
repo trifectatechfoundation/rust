@@ -300,7 +300,7 @@ impl<'hir> Visitor<'hir> for CheckLoopVisitor<'hir> {
 
                 if let Some(cont_expr) = opt_expr {
                     let (head, loop_label, loop_kind) = if let Some(loop_id) = loop_id {
-                        // FIXME should allow continuing a match
+                        // FIXME(labeled_match) should allow continuing a match
                         match self.tcx.hir().expect_expr(loop_id).kind {
                             hir::ExprKind::Loop(_, label, source, sp) => {
                                 (Some(sp), label, Some(source))

@@ -638,7 +638,7 @@ impl<'a> State<'a> {
                         expr,
                         // Parenthesize if required by precedence, or in the
                         // case of `continue 'inner: loop { continue 'inner 1 } + 1`
-                        // FIXME update above comment to use labeled match
+                        // FIXME(labeled_match) update above comment to use labeled match
                         expr.precedence().order() < parser::PREC_JUMP
                             || (opt_label.is_none() && classify::leading_labeled_expr(expr)),
                         fixup.subsequent_subexpression(),

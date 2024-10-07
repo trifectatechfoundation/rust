@@ -549,7 +549,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let normal_exit_block = f(self);
         let breakable_scope = self.scopes.breakable_scopes.pop().unwrap();
         assert!(breakable_scope.region_scope == region_scope);
-        // FIXME handle drop for regular exit
+        // FIXME(labeled_match) handle drop for regular exit
         self.build_exit_tree(
             breakable_scope.continue_drops.unwrap(),
             region_scope,

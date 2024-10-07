@@ -133,7 +133,7 @@ fn cs_partial_cmp(
                 // Reference: https://github.com/rust-lang/rust/pull/103659#issuecomment-1328126354
 
                 if !discr_then_data
-                    // FIXME does this need to preserve the label?
+                    // FIXME(labeled_match) does this need to preserve the label?
                     && let ExprKind::Match(_, arms, _, _) = &mut expr1.kind
                     && let Some(last) = arms.last_mut()
                     && let PatKind::Wild = last.pat.kind

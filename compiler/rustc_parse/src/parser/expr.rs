@@ -1899,7 +1899,7 @@ impl<'a> Parser<'a> {
     /// Parse `"continue" (('label (:? expr)?) | expr?)` with `"break"` token already
     /// eaten. If the label is followed immediately by a `:` token, the label and `:`
     /// are parsed as part of the expression (i.e. a labeled loop).
-    // FIXME add back some comment about confusion that parse_expr_break also has
+    // FIXME(labeled_match) add back some comment about confusion that parse_expr_break also has
     fn parse_expr_continue(&mut self) -> PResult<'a, P<Expr>> {
         let lo = self.prev_token.span;
         let mut label = self.eat_label();
@@ -1909,7 +1909,7 @@ impl<'a> Parser<'a> {
             // The value expression can be a labeled loop, see issue #86948, e.g.:
             // `loop { break 'label: loop { break 'label 42; }; }`
             let lexpr = self.parse_expr_labeled(label, true)?;
-            // FIXME error
+            // FIXME(labeled_match) error
             self.dcx().emit_err(errors::LabeledLoopInBreak {
                 span: lexpr.span,
                 sub: errors::WrapInParentheses::Expression {
