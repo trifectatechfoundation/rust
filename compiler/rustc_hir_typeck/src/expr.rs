@@ -300,7 +300,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
 
                     // See note on `PatKind::Or` below for why this is `all`.
-                    ExprKind::Match(scrutinee, arms, _) => {
+                    ExprKind::Match(scrutinee, arms, _, _) => {
                         assert_eq!(scrutinee.hir_id, expr.hir_id);
                         arms.iter()
                             .all(|arm| self.pat_guaranteed_to_constitute_read_for_never(arm.pat))
@@ -338,7 +338,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     | ExprKind::Loop(_, _, _, _)
                     | ExprKind::Lit(_)
                     | ExprKind::Path(_)
-                    | ExprKind::Continue(_)
+                    | ExprKind::Continue(_, _)
                     | ExprKind::OffsetOf(_, _)
                     | ExprKind::Err(_) => unreachable!("no sub-expr expected for {:?}", expr.kind),
                 }

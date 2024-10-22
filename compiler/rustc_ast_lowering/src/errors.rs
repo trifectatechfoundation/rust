@@ -452,7 +452,6 @@ pub(crate) struct YieldInClosure {
     pub suggestion: Option<Span>,
 }
 
-
 #[derive(Diagnostic)]
 #[diag(ast_lowering_continue_with_val)]
 pub(crate) struct ContinueWithVal {
