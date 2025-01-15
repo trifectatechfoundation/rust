@@ -90,22 +90,31 @@ fn dfa() {
     // CHECK-LABEL: fn dfa(
     // CHECK: bb0: {
     // CHECK:     {{_.*}} = DFA::A;
-    // CHECK:     goto -> bb1;
+    // CHECK:     goto -> bb7;
     // CHECK: bb1: {
-    // CHECK:     switchInt({{.*}}) -> [0: bb6, 1: bb5, 2: bb4, 3: bb3, otherwise: bb2];
+    // CHECK:     goto -> bb5;
     // CHECK: bb2: {
     // CHECK:     unreachable;
     // CHECK: bb3: {
     // CHECK:     return;
     // CHECK: bb4: {
     // CHECK:     {{_.*}} = DFA::D;
-    // CHECK:     goto -> bb1;
+    // CHECK:     goto -> bb8;
     // CHECK: bb5: {
     // CHECK:     {{_.*}} = DFA::C;
-    // CHECK:     goto -> bb1;
+    // CHECK:     goto -> bb9;
     // CHECK: bb6: {
     // CHECK:     {{_.*}} = DFA::B;
     // CHECK:     goto -> bb1;
+    // CHECK: bb7: {
+    // CHECK:     _4 = discriminant(_1);
+    // CHECK:     goto -> bb6;
+    // CHECK: bb8: {
+    // CHECK:     _4 = discriminant(_1);
+    // CHECK:     goto -> bb3;
+    // CHECK: bb9: {
+    // CHECK:     _4 = discriminant(_1);
+    // CHECK:     goto -> bb4;
     let mut state = DFA::A;
     loop {
         match state {
@@ -540,6 +549,59 @@ pub fn bitwise_not() -> i32 {
     if !a == 0 { 1 } else { 0 }
 }
 
+fn loop_plus_match() -> Option<u8> {
+    // CHECK-LABEL: fn loop_plus_match(
+
+    // CHECK: bb0: {
+    // CHECK-NEXT: StorageLive(_1);
+    // CHECK-NEXT: _1 = const 1_u8;
+    // CHECK-NEXT: goto -> bb7;
+    let mut state = 1u8;
+    // CHECK: bb1: {
+    // CHECK-NEXT: goto -> bb4;
+
+    loop {
+        // CHECK: bb2: {
+        // CHECK-NEXT: _0 = Option::<u8>::None;
+        // CHECK-NEXT: goto -> bb6;
+
+        // CHECK: bb3: {
+        // CHECK-NEXT: _0 = Option::<u8>::Some(const 42_u8);
+        // CHECK-NEXT: goto -> bb6;
+
+        // CHECK: bb4: {
+        // CHECK-NEXT: _1 = const 3_u8;
+        // CHECK-NEXT: goto -> bb8;
+
+        // CHECK: bb5: {
+        // CHECK-NEXT: _1 = const 2_u8;
+        // CHECK-NEXT: goto -> bb1;
+
+        match state {
+            1 => {
+                state = 2;
+                continue;
+            }
+            2 => {
+                state = 3;
+                continue;
+            }
+            3 => break Some(42),
+            _ => break None,
+        }
+    }
+
+    // CHECK: bb6: {
+    // CHECK-NEXT: StorageDead(_1);
+    // CHECK-NEXT: return;
+
+    // CHECK: bb7: {
+    // CHECK-NEXT: goto -> bb5;
+
+    // CHECK: bb8: {
+    // CHECK-NEXT: goto -> bb3;
+}
+
 fn main() {
     // CHECK-LABEL: fn main(
     too_complex(Ok(0));
@@ -555,6 +617,7 @@ fn main() {
     aggregate(7);
     assume(7, false);
     floats();
+    loop_plus_match();
 }
 
 // EMIT_MIR jump_threading.too_complex.JumpThreading.diff
@@ -572,3 +635,4 @@ fn main() {
 // EMIT_MIR jump_threading.aggregate_copy.JumpThreading.diff
 // EMIT_MIR jump_threading.floats.JumpThreading.diff
 // EMIT_MIR jump_threading.bitwise_not.JumpThreading.diff
+// EMIT_MIR jump_threading.loop_plus_match.JumpThreading.diff
