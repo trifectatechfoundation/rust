@@ -34,10 +34,12 @@
 //! cost by `MAX_COST`.
 
 use rustc_arena::DroplessArena;
+use rustc_attr_parsing::OptimizeAttr;
 use rustc_const_eval::const_eval::DummyMachine;
 use rustc_const_eval::interpret::{ImmTy, Immediate, InterpCx, OpTy, Projectable};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_index::IndexVec;
+use rustc_index::bit_set::DenseBitSet;
 use rustc_middle::bug;
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::visit::Visitor;
@@ -54,8 +56,10 @@ use crate::cost_checker::CostChecker;
 pub(super) struct JumpThreading;
 
 const MAX_BACKTRACK: usize = 5;
-const MAX_COST: usize = 10000;
-const MAX_PLACES: usize = 10000;
+const MAX_COST: usize = 100;
+const MAX_PLACES: usize = 100;
+const MAX_COST_DFA: usize = 10000;
+const MAX_PLACES_DFA: usize = 10000;
 
 impl<'tcx> crate::MirPass<'tcx> for JumpThreading {
     fn is_enabled(&self, sess: &rustc_session::Session) -> bool {
@@ -73,6 +77,9 @@ impl<'tcx> crate::MirPass<'tcx> for JumpThreading {
             return;
         }
 
+        let optimize_for_dfa =
+            tcx.codegen_fn_attrs(body.source.def_id()).optimize == OptimizeAttr::SpeedForDfa;
+
         let typing_env = body.typing_env(tcx);
         let arena = &DroplessArena::default();
         let mut finder = TOFinder {
@@ -81,8 +88,14 @@ impl<'tcx> crate::MirPass<'tcx> for JumpThreading {
             ecx: InterpCx::new(tcx, DUMMY_SP, typing_env, DummyMachine),
             body,
             arena,
-            map: Map::new(tcx, body, Some(MAX_PLACES)),
+            map: Map::new(
+                tcx,
+                body,
+                Some(if optimize_for_dfa { MAX_PLACES_DFA } else { MAX_PLACES }),
+            ),
+            loop_headers: loop_headers(body),
             opportunities: Vec::new(),
+            optimize_for_dfa,
         };
 
         for bb in body.basic_blocks.indices() {
@@ -93,6 +106,13 @@ impl<'tcx> crate::MirPass<'tcx> for JumpThreading {
         debug!(?opportunities);
         if opportunities.is_empty() {
             return;
+        }
+
+        if !optimize_for_dfa {
+            // Verify that we do not thread through a loop header.
+            for to in opportunities.iter() {
+                assert!(to.chain.iter().all(|&block| !finder.loop_headers.contains(block)));
+            }
         }
 
         OpportunitySet::new(body, opportunities).apply(body);
@@ -113,9 +133,11 @@ struct TOFinder<'a, 'tcx> {
     ecx: InterpCx<'tcx, DummyMachine>,
     body: &'a Body<'tcx>,
     map: Map<'tcx>,
+    loop_headers: DenseBitSet<BasicBlock>,
     /// We use an arena to avoid cloning the slices when cloning `state`.
     arena: &'a DroplessArena,
     opportunities: Vec<ThreadingOpportunity>,
+    optimize_for_dfa: bool,
 }
 
 /// Represent the following statement. If we can prove that the current local is equal/not-equal
@@ -181,7 +203,7 @@ impl<'a, 'tcx> TOFinder<'a, 'tcx> {
     #[instrument(level = "trace", skip(self))]
     fn start_from_switch(&mut self, bb: BasicBlock) {
         let bbdata = &self.body[bb];
-        if bbdata.is_cleanup {
+        if bbdata.is_cleanup || (!self.optimize_for_dfa && self.loop_headers.contains(bb)) {
             return;
         }
         let Some((discr, targets)) = bbdata.terminator().kind.as_switch() else { return };
@@ -227,6 +249,11 @@ impl<'a, 'tcx> TOFinder<'a, 'tcx> {
         mut cost: CostChecker<'_, 'tcx>,
         depth: usize,
     ) {
+        // Do not thread through loop headers.
+        if !self.optimize_for_dfa && self.loop_headers.contains(bb) {
+            return;
+        }
+
         debug!(cost = ?cost.cost());
         for (statement_index, stmt) in
             self.body.basic_blocks[bb].statements.iter().enumerate().rev()
@@ -236,7 +263,7 @@ impl<'a, 'tcx> TOFinder<'a, 'tcx> {
             }
 
             cost.visit_statement(stmt, Location { block: bb, statement_index });
-            if cost.cost() > MAX_COST {
+            if cost.cost() > if self.optimize_for_dfa { MAX_COST_DFA } else { MAX_COST } {
                 return;
             }
 
@@ -812,4 +839,22 @@ fn predecessor_count(body: &Body<'_>) -> IndexVec<BasicBlock, usize> {
 enum Update {
     Incr,
     Decr,
+}
+
+/// Compute the set of loop headers in the given body. We define a loop header as a block which has
+/// at least a predecessor which it dominates. This definition is only correct for reducible CFGs.
+/// But if the CFG is already irreducible, there is no point in trying much harder.
+/// is already irreducible.
+fn loop_headers(body: &Body<'_>) -> DenseBitSet<BasicBlock> {
+    let mut loop_headers = DenseBitSet::new_empty(body.basic_blocks.len());
+    let dominators = body.basic_blocks.dominators();
+    // Only visit reachable blocks.
+    for (bb, bbdata) in traversal::preorder(body) {
+        for succ in bbdata.terminator().successors() {
+            if dominators.dominates(succ, bb) {
+                loop_headers.insert(succ);
+            }
+        }
+    }
+    loop_headers
 }

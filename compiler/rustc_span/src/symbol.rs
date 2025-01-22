@@ -1918,6 +1918,7 @@ symbols! {
         sparc_target_feature,
         specialization,
         speed,
+        speed_for_dfa,
         spotlight,
         sqrtf128,
         sqrtf16,

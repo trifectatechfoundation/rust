@@ -588,6 +588,8 @@ fn codegen_fn_attrs(tcx: TyCtxt<'_>, did: LocalDefId) -> CodegenFnAttrs {
                 OptimizeAttr::Size
             } else if list_contains_name(items, sym::speed) {
                 OptimizeAttr::Speed
+            } else if list_contains_name(items, sym::speed_for_dfa) {
+                OptimizeAttr::SpeedForDfa
             } else {
                 err(items[0].span(), "invalid argument");
                 OptimizeAttr::None

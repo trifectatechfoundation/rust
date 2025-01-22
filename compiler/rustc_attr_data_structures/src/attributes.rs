@@ -35,10 +35,11 @@ pub enum InstructionSetAttr {
     ArmT32,
 }
 
-#[derive(Clone, Encodable, Decodable, Debug, HashStable_Generic)]
+#[derive(Clone, Encodable, Decodable, Debug, PartialEq, Eq, HashStable_Generic)]
 pub enum OptimizeAttr {
     None,
     Speed,
+    SpeedForDfa,
     Size,
 }
 

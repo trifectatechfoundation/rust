@@ -340,7 +340,7 @@ pub(crate) fn llfn_attrs_from_instance<'ll, 'tcx>(
             to_add.push(llvm::AttributeKind::MinSize.create_attr(cx.llcx));
             to_add.push(llvm::AttributeKind::OptimizeForSize.create_attr(cx.llcx));
         }
-        OptimizeAttr::Speed => {}
+        OptimizeAttr::Speed | OptimizeAttr::SpeedForDfa => {}
     }
 
     let inline =

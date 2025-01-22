@@ -1058,7 +1058,7 @@ pub(crate) fn provide(providers: &mut Providers) {
             let CodegenFnAttrs { optimize, .. } = tcx.codegen_fn_attrs(*id);
             match optimize {
                 attr::OptimizeAttr::None | attr::OptimizeAttr::Size => false,
-                attr::OptimizeAttr::Speed => true,
+                attr::OptimizeAttr::Speed | attr::OptimizeAttr::SpeedForDfa => true,
             }
         });
 

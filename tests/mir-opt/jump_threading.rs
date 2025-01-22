@@ -3,7 +3,7 @@
 // EMIT_MIR_FOR_EACH_PANIC_STRATEGY
 
 #![feature(try_trait_v2)]
-#![feature(custom_mir, core_intrinsics, rustc_attrs)]
+#![feature(custom_mir, core_intrinsics, optimize_attribute, rustc_attrs)]
 
 use std::intrinsics::mir::*;
 use std::ops::ControlFlow;
@@ -90,31 +90,22 @@ fn dfa() {
     // CHECK-LABEL: fn dfa(
     // CHECK: bb0: {
     // CHECK:     {{_.*}} = DFA::A;
-    // CHECK:     goto -> bb7;
+    // CHECK:     goto -> bb1;
     // CHECK: bb1: {
-    // CHECK:     goto -> bb5;
+    // CHECK:     switchInt({{.*}}) -> [0: bb6, 1: bb5, 2: bb4, 3: bb3, otherwise: bb2];
     // CHECK: bb2: {
     // CHECK:     unreachable;
     // CHECK: bb3: {
     // CHECK:     return;
     // CHECK: bb4: {
     // CHECK:     {{_.*}} = DFA::D;
-    // CHECK:     goto -> bb8;
+    // CHECK:     goto -> bb1;
     // CHECK: bb5: {
     // CHECK:     {{_.*}} = DFA::C;
-    // CHECK:     goto -> bb9;
+    // CHECK:     goto -> bb1;
     // CHECK: bb6: {
     // CHECK:     {{_.*}} = DFA::B;
     // CHECK:     goto -> bb1;
-    // CHECK: bb7: {
-    // CHECK:     _4 = discriminant(_1);
-    // CHECK:     goto -> bb6;
-    // CHECK: bb8: {
-    // CHECK:     _4 = discriminant(_1);
-    // CHECK:     goto -> bb3;
-    // CHECK: bb9: {
-    // CHECK:     _4 = discriminant(_1);
-    // CHECK:     goto -> bb4;
     let mut state = DFA::A;
     loop {
         match state {
@@ -549,6 +540,7 @@ pub fn bitwise_not() -> i32 {
     if !a == 0 { 1 } else { 0 }
 }
 
+#[optimize(speed_for_dfa)]
 fn loop_plus_match() -> Option<u8> {
     // CHECK-LABEL: fn loop_plus_match(
 
