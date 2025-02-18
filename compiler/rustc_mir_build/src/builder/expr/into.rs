@@ -8,7 +8,6 @@ use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
-use rustc_span::DUMMY_SP;
 use rustc_span::source_map::Spanned;
 use tracing::{debug, instrument};
 
@@ -250,6 +249,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // Start the loop.
                 this.cfg.goto(block, source_info, loop_block);
 
+                // FIXME do we need the breakable scope?
                 this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
                     // conduct the test, if necessary
                     let mut body_block = this.cfg.start_new_block();
@@ -267,18 +267,44 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                     unpack!(
                         body_block = this.in_scope((region_scope, source_info), LintLevel::Inherited, move |this| {
-                            this.in_breakable_scope(None, state_place, DUMMY_SP, |this| {
-                                Some(this.match_expr(
-                                    state_place,
-                                    body_block,
-                                    state,
-                                    arms,
-                                    expr_span,
-                                    this.thir[state].span,
-                                ))
+                            let unreachable_block = this.cfg.start_new_block();
+                            this.cfg.terminate(unreachable_block, source_info, TerminatorKind::Unreachable);
+
+                            let arm_blocks = arms.iter().map(|&arm| {
+                                let block = this.cfg.start_new_block();
+                                match &this.thir[arm].pattern.kind {
+                                    PatKind::Variant { adt_def, args: _, variant_index, subpatterns } => {
+                                        assert!(subpatterns.is_empty());
+
+                                        let discr = adt_def.discriminants(this.tcx).find(|(var, _discr)| var == variant_index).unwrap().1;
+
+                                        (discr, block, arm)
+                                    }
+                                    _ => panic!(),
+                                }
+                            }).collect::<Vec<_>>();
+
+                            let targets = SwitchTargets::new(
+                                arm_blocks.iter().map(|&(discr, block, _arm)| (discr.val, block)),
+                                unreachable_block,
+                            );
+                            this.in_const_continuable_scope(targets.clone(), state_place, |this| {
+                                // FIXME get actual discriminant type
+                                let discr = this.temp(this.tcx.types.isize, source_info.span);
+                                this.cfg.push_assign(body_block, source_info, discr, Rvalue::Discriminant(state_place));
+                                let discr = Operand::Copy(discr);
+                                this.cfg.terminate(body_block, source_info, TerminatorKind::SwitchInt { discr, targets });
+
+                                for (_discr, mut block, arm) in arm_blocks {
+                                    let empty_place = this.get_unit_temp();
+                                    unpack!(block = this.expr_into_dest(empty_place, block, this.thir[arm].body));
+                                    this.cfg.terminate(block, source_info, TerminatorKind::Unreachable);
+                                }
+
+                                None
                             })
                         })
-                    );
+                );
 
                     this.cfg.goto(body_block, source_info, loop_block);
 

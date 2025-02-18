@@ -2,28 +2,34 @@
 
 #![feature(loop_match)]
 
+enum State {
+    A,
+    B,
+    C,
+}
+
 fn main() {
-    let mut state = 0;
+    let mut state = State::A;
     #[loop_match]
     'a: loop {
         state = 'blk: {
             match state {
-                0 =>
+                State::A =>
                 {
                     #[const_continue]
-                    1
+                    break 'blk State::B
                 }
-                1 => {
+                State::B => {
                     if true {
                         #[const_continue]
-                        break 'blk 2;
+                        break 'blk State::C;
                     } else {
                         // No drops allowed at this point
                         #[const_continue]
-                        break 'blk 3;
+                        break 'blk State::A;
                     }
                 }
-                _ => break 'a,
+                State::C => break 'a,
             }
         }
     }

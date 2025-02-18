@@ -104,6 +104,8 @@ pub(crate) struct Scopes<'tcx> {
     /// The current set of breakable scopes. See module comment for more details.
     breakable_scopes: Vec<BreakableScope<'tcx>>,
 
+    const_continuable_scopes: Vec<ConstContinuableScope<'tcx>>,
+
     /// The scope of the innermost if-then currently being lowered.
     if_then_scope: Option<IfThenScope>,
 
@@ -174,6 +176,17 @@ struct BreakableScope<'tcx> {
 }
 
 #[derive(Debug)]
+struct ConstContinuableScope<'tcx> {
+    /// The if-then scope or arm scope
+    region_scope: region::Scope,
+    /// The destination of the loop/block expression itself (i.e., where to put
+    /// the result of a `break` or `return` expression)
+    state_place: Place<'tcx>,
+
+    match_arms: SwitchTargets,
+}
+
+#[derive(Debug)]
 struct IfThenScope {
     /// The if-then scope or arm scope
     region_scope: region::Scope,
@@ -186,6 +199,7 @@ struct IfThenScope {
 pub(crate) enum BreakableTarget {
     Continue(region::Scope),
     Break(region::Scope),
+    ConstContinue(region::Scope),
     Return,
 }
 
@@ -456,6 +470,7 @@ impl<'tcx> Scopes<'tcx> {
         Self {
             scopes: Vec::new(),
             breakable_scopes: Vec::new(),
+            const_continuable_scopes: Vec::new(),
             if_then_scope: None,
             unwind_drops: DropTree::new(),
             coroutine_drops: DropTree::new(),
@@ -544,6 +559,29 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 );
                 target.unit()
             }
+        }
+    }
+
+    ///  Start a const-continuable scope, which tracks where `#[const_continue] break` should
+    /// branch to.
+    pub(crate) fn in_const_continuable_scope<F>(
+        &mut self,
+        match_arms: SwitchTargets,
+        state_place: Place<'tcx>,
+        f: F,
+    ) -> BlockAnd<()>
+    where
+        F: FnOnce(&mut Builder<'a, 'tcx>) -> Option<BlockAnd<()>>,
+    {
+        let region_scope = self.scopes.topmost();
+        let scope = ConstContinuableScope { region_scope, state_place, match_arms };
+        self.scopes.const_continuable_scopes.push(scope);
+        let normal_exit_block = f(self);
+        let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
+        assert!(breakable_scope.region_scope == region_scope);
+        match normal_exit_block {
+            Some(block) => block,
+            None => self.cfg.start_new_block().unit(),
         }
     }
 
@@ -675,6 +713,45 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             BreakableTarget::Continue(scope) => {
                 let break_index = get_scope_index(scope);
                 (break_index, None)
+            }
+            BreakableTarget::ConstContinue(scope) => {
+                assert!(value.is_some());
+                let break_index = self
+                    .scopes
+                    .const_continuable_scopes
+                    .iter()
+                    .rposition(|const_continuable_scope| {
+                        const_continuable_scope.region_scope == scope
+                    })
+                    .unwrap_or_else(|| {
+                        span_bug!(span, "no enclosing const-continuable scope found")
+                    });
+                let state_place = self.scopes.const_continuable_scopes[break_index].state_place;
+
+                self.block_context.push(BlockFrame::SubExpr);
+                block = self.expr_into_dest(state_place, block, value.unwrap()).into_block();
+                self.block_context.pop();
+
+                // FIXME get actual discriminant type
+                let discr = self.temp(self.tcx.types.isize, source_info.span);
+                let scope = &self.scopes.const_continuable_scopes[break_index];
+                self.cfg.push_assign(
+                    block,
+                    source_info,
+                    discr,
+                    Rvalue::Discriminant(scope.state_place),
+                );
+                // FIXME turn this into a direct jump + FalseEdge
+                self.cfg.terminate(
+                    block,
+                    source_info,
+                    TerminatorKind::SwitchInt {
+                        discr: Operand::Copy(discr),
+                        targets: scope.match_arms.clone(),
+                    },
+                );
+
+                return self.cfg.start_new_block().unit();
             }
         };
 
