@@ -82,9 +82,11 @@ impl Category {
             | ExprKind::NamedConst { .. } => Some(Category::Constant),
 
             ExprKind::Loop { .. }
+            | ExprKind::LoopMatch { .. }
             | ExprKind::Block { .. }
             | ExprKind::Break { .. }
             | ExprKind::Continue { .. }
+            | ExprKind::ConstContinue { .. }
             | ExprKind::Return { .. }
             | ExprKind::Become { .. } =>
             // FIXME(#27840) these probably want their own

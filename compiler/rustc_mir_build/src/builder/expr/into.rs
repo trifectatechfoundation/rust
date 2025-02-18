@@ -8,6 +8,7 @@ use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
+use rustc_span::DUMMY_SP;
 use rustc_span::source_map::Spanned;
 use tracing::{debug, instrument};
 
@@ -236,6 +237,48 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     // Execute the body, branching back to the test.
                     let body_block_end = this.expr_into_dest(tmp, body_block, body).into_block();
                     this.cfg.goto(body_block_end, source_info, loop_block);
+
+                    // Loops are only exited by `break` expressions.
+                    None
+                })
+            }
+            ExprKind::LoopMatch { state, ref arms, .. } => {
+                // FIXME add diagram
+
+                let loop_block = this.cfg.start_new_block();
+
+                // Start the loop.
+                this.cfg.goto(block, source_info, loop_block);
+
+                this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
+                    // conduct the test, if necessary
+                    let mut body_block = this.cfg.start_new_block();
+                    this.cfg.terminate(
+                        loop_block,
+                        source_info,
+                        TerminatorKind::FalseUnwind {
+                            real_target: body_block,
+                            unwind: UnwindAction::Continue,
+                        },
+                    );
+                    this.diverge_from(loop_block);
+
+                    let state_place = unpack!(body_block = this.as_place(body_block, state));
+
+                    unpack!(
+                        body_block = this.in_breakable_scope(None, state_place, DUMMY_SP, |this| {
+                            Some(this.match_expr(
+                                state_place,
+                                body_block,
+                                state,
+                                arms,
+                                expr_span,
+                                this.thir[state].span,
+                            ))
+                        })
+                    );
+
+                    this.cfg.goto(body_block, source_info, loop_block);
 
                     // Loops are only exited by `break` expressions.
                     None
@@ -547,6 +590,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
 
             ExprKind::Continue { .. }
+            | ExprKind::ConstContinue { .. } // FIXME directly jump to target branch using FakeEdge
             | ExprKind::Break { .. }
             | ExprKind::Return { .. }
             | ExprKind::Become { .. } => {

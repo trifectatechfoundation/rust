@@ -789,16 +789,39 @@ impl<'tcx> ThirBuildCx<'tcx> {
             }
             hir::ExprKind::Ret(v) => ExprKind::Return { value: v.map(|v| self.mirror_expr(v)) },
             hir::ExprKind::Become(call) => ExprKind::Become { value: self.mirror_expr(call) },
-            hir::ExprKind::Break(dest, ref value) => match dest.target_id {
-                Ok(target_id) => ExprKind::Break {
-                    label: region::Scope {
-                        local_id: target_id.local_id,
-                        data: region::ScopeData::Node,
-                    },
-                    value: value.map(|value| self.mirror_expr(value)),
-                },
-                Err(err) => bug!("invalid loop id for break: {}", err),
-            },
+            hir::ExprKind::Break(dest, ref value) => {
+                let is_const_continue = self
+                    .tcx
+                    .hir()
+                    .attrs(expr.hir_id)
+                    .iter()
+                    .any(|attr| attr.has_name(sym::const_continue));
+                if is_const_continue {
+                    match dest.target_id {
+                        Ok(target_id) => ExprKind::ConstContinue {
+                            label: region::Scope {
+                                local_id: target_id.local_id,
+                                data: region::ScopeData::Node,
+                            },
+                            value: self.mirror_expr(
+                                value.expect("missing value for #[const_continue] break"),
+                            ),
+                        },
+                        Err(err) => bug!("invalid loop id for break: {}", err),
+                    }
+                } else {
+                    match dest.target_id {
+                        Ok(target_id) => ExprKind::Break {
+                            label: region::Scope {
+                                local_id: target_id.local_id,
+                                data: region::ScopeData::Node,
+                            },
+                            value: value.map(|value| self.mirror_expr(value)),
+                        },
+                        Err(err) => bug!("invalid loop id for break: {}", err),
+                    }
+                }
+            }
             hir::ExprKind::Continue(dest) => match dest.target_id {
                 Ok(loop_id) => ExprKind::Continue {
                     label: region::Scope {
@@ -833,18 +856,60 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 match_source,
             },
             hir::ExprKind::Loop(body, ..) => {
-                let block_ty = self.typeck_results.node_type(body.hir_id);
-                let (temp_lifetime, backwards_incompatible) = self
-                    .rvalue_scopes
-                    .temporary_scope(self.region_scope_tree, body.hir_id.local_id);
-                let block = self.mirror_block(body);
-                let body = self.thir.exprs.push(Expr {
-                    ty: block_ty,
-                    temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
-                    span: self.thir[block].span,
-                    kind: ExprKind::Block { block },
-                });
-                ExprKind::Loop { body }
+                let is_loop_match = self
+                    .tcx
+                    .hir()
+                    .attrs(expr.hir_id)
+                    .iter()
+                    .any(|attr| attr.has_name(sym::loop_match));
+                if is_loop_match {
+                    assert!(body.stmts.is_empty());
+                    let hir::ExprKind::Assign(state, block_expr, _) = body.expr.unwrap().kind
+                    else {
+                        panic!();
+                    };
+                    let hir::ExprKind::Block(block_body, _) = block_expr.kind else {
+                        panic!();
+                    };
+                    assert!(block_body.stmts.is_empty());
+                    let hir::ExprKind::Match(discr, arms, match_source) =
+                        block_body.expr.unwrap().kind
+                    else {
+                        panic!();
+                    };
+                    match (state.kind, discr.kind) {
+                        (
+                            hir::ExprKind::Path(hir::QPath::Resolved(_, state)),
+                            hir::ExprKind::Path(hir::QPath::Resolved(_, discr)),
+                        ) if state.segments.iter().map(|seg| seg.ident).collect::<Vec<_>>()
+                            == discr.segments.iter().map(|seg| seg.ident).collect::<Vec<_>>() => {}
+                        _ => panic!(),
+                    }
+
+                    ExprKind::LoopMatch {
+                        state: self.mirror_expr(state),
+                        region_scope: region::Scope {
+                            local_id: block_expr.hir_id.local_id,
+                            data: region::ScopeData::Node,
+                        },
+
+                        arms: arms.iter().map(|a| self.convert_arm(a)).collect(),
+                        match_source,
+                    }
+                } else {
+                    let block_ty = self.typeck_results.node_type(body.hir_id);
+                    let (temp_lifetime, backwards_incompatible) = self
+                        .rvalue_scopes
+                        .temporary_scope(self.region_scope_tree, body.hir_id.local_id);
+                    let block = self.mirror_block(body);
+                    let body = self.thir.exprs.push(Expr {
+                        ty: block_ty,
+                        temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
+                        span: self.thir[block].span,
+                        kind: ExprKind::Block { block },
+                    });
+                    ExprKind::Loop { body }
+                }
             }
             hir::ExprKind::Field(source, ..) => ExprKind::Field {
                 lhs: self.mirror_expr(source),

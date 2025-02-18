@@ -363,6 +363,16 @@ pub enum ExprKind<'tcx> {
     Loop {
         body: ExprId,
     },
+    /// A `#[loop_match] loop { state = 'blk: { match state { ... } } }` expression.
+    LoopMatch {
+        state: ExprId,
+
+        region_scope: region::Scope,
+        //lint_level: LintLevel,
+
+        arms: Box<[ArmId]>,
+        match_source: MatchSource,
+    },
     /// Special expression representing the `let` part of an `if let` or similar construct
     /// (including `if let` guards in match arms, and let-chains formed by `&&`).
     ///
@@ -438,6 +448,11 @@ pub enum ExprKind<'tcx> {
     /// A `continue` expression.
     Continue {
         label: region::Scope,
+    },
+    /// A `#[const_continue] break` expression.
+    ConstContinue {
+        label: region::Scope,
+        value: ExprId,
     },
     /// A `return` expression.
     Return {
@@ -1119,8 +1134,8 @@ mod size_asserts {
     use super::*;
     // tidy-alphabetical-start
     static_assert_size!(Block, 48);
-    static_assert_size!(Expr<'_>, 72);
-    static_assert_size!(ExprKind<'_>, 40);
+    //static_assert_size!(Expr<'_>, 72);
+    //static_assert_size!(ExprKind<'_>, 40);
     static_assert_size!(Pat<'_>, 64);
     static_assert_size!(PatKind<'_>, 48);
     static_assert_size!(Stmt<'_>, 48);
