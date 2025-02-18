@@ -889,7 +889,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     ExprKind::LoopMatch {
                         state: self.mirror_expr(state),
                         region_scope: region::Scope {
-                            local_id: block_expr.hir_id.local_id,
+                            local_id: block_body.hir_id.local_id,
                             data: region::ScopeData::Node,
                         },
 

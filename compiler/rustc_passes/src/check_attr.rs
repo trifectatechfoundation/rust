@@ -286,7 +286,10 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                             | sym::lang
                             | sym::needs_allocator
                             | sym::default_lib_allocator
-                            | sym::custom_mir,
+                            | sym::custom_mir
+                            // FIXME check that we only attach it to the right kind of items
+                            | sym::loop_match
+                            | sym::const_continue,
                             ..
                         ] => {}
                         [name, ..] => {

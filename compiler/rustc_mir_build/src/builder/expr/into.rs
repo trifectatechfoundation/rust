@@ -242,7 +242,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     None
                 })
             }
-            ExprKind::LoopMatch { state, ref arms, .. } => {
+            ExprKind::LoopMatch { state, region_scope, ref arms, .. } => {
                 // FIXME add diagram
 
                 let loop_block = this.cfg.start_new_block();
@@ -266,15 +266,17 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     let state_place = unpack!(body_block = this.as_place(body_block, state));
 
                     unpack!(
-                        body_block = this.in_breakable_scope(None, state_place, DUMMY_SP, |this| {
-                            Some(this.match_expr(
-                                state_place,
-                                body_block,
-                                state,
-                                arms,
-                                expr_span,
-                                this.thir[state].span,
-                            ))
+                        body_block = this.in_scope((region_scope, source_info), LintLevel::Inherited, move |this| {
+                            this.in_breakable_scope(None, state_place, DUMMY_SP, |this| {
+                                Some(this.match_expr(
+                                    state_place,
+                                    body_block,
+                                    state,
+                                    arms,
+                                    expr_span,
+                                    this.thir[state].span,
+                                ))
+                            })
                         })
                     );
 
