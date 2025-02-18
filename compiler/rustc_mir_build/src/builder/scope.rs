@@ -83,6 +83,7 @@ that contains only loops and breakable blocks. It tracks where a `break`,
 
 use std::mem;
 
+use rustc_ast::LitKind;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
@@ -103,6 +104,8 @@ pub(crate) struct Scopes<'tcx> {
 
     /// The current set of breakable scopes. See module comment for more details.
     breakable_scopes: Vec<BreakableScope<'tcx>>,
+
+    const_continuable_scopes: Vec<ConstContinuableScope<'tcx>>,
 
     /// The scope of the innermost if-then currently being lowered.
     if_then_scope: Option<IfThenScope>,
@@ -174,6 +177,19 @@ struct BreakableScope<'tcx> {
 }
 
 #[derive(Debug)]
+struct ConstContinuableScope<'tcx> {
+    /// The if-then scope or arm scope
+    region_scope: region::Scope,
+    /// The destination of the loop/block expression itself (i.e., where to put
+    /// the result of a `break` or `return` expression)
+    state_place: Place<'tcx>,
+
+    match_arms: SwitchTargets,
+    /// Drops that happen on the `return` path and would have happened on the `break` path.
+    break_drops: DropTree,
+}
+
+#[derive(Debug)]
 struct IfThenScope {
     /// The if-then scope or arm scope
     region_scope: region::Scope,
@@ -186,6 +202,7 @@ struct IfThenScope {
 pub(crate) enum BreakableTarget {
     Continue(region::Scope),
     Break(region::Scope),
+    ConstContinue(region::Scope),
     Return,
 }
 
@@ -305,27 +322,25 @@ impl DropTree {
     }
 
     /// Builds the MIR for a given drop tree.
-    ///
-    /// `blocks` should have the same length as `self.drops`, and may have its
-    /// first value set to some already existing block.
     fn build_mir<'tcx, T: DropTreeBuilder<'tcx>>(
         &mut self,
         cfg: &mut CFG<'tcx>,
-        blocks: &mut IndexVec<DropIdx, Option<BasicBlock>>,
-    ) {
+        root_node: Option<BasicBlock>,
+    ) -> IndexVec<DropIdx, Option<BasicBlock>> {
         debug!("DropTree::build_mir(drops = {:#?})", self);
-        assert_eq!(blocks.len(), self.drops.len());
 
-        self.assign_blocks::<T>(cfg, blocks);
-        self.link_blocks(cfg, blocks)
+        let mut blocks = self.assign_blocks::<T>(cfg, root_node);
+        self.link_blocks(cfg, &mut blocks);
+
+        blocks
     }
 
     /// Assign blocks for all of the drops in the drop tree that need them.
     fn assign_blocks<'tcx, T: DropTreeBuilder<'tcx>>(
         &mut self,
         cfg: &mut CFG<'tcx>,
-        blocks: &mut IndexVec<DropIdx, Option<BasicBlock>>,
-    ) {
+        root_node: Option<BasicBlock>,
+    ) -> IndexVec<DropIdx, Option<BasicBlock>> {
         // StorageDead statements can share blocks with each other and also with
         // a Drop terminator. We iterate through the drops to find which drops
         // need their own block.
@@ -342,8 +357,11 @@ impl DropTree {
             Own,
         }
 
+        let mut blocks = IndexVec::from_elem(None, &self.drops);
+        blocks[ROOT_NODE] = root_node;
+
         let mut needs_block = IndexVec::from_elem(Block::None, &self.drops);
-        if blocks[ROOT_NODE].is_some() {
+        if root_node.is_some() {
             // In some cases (such as drops for `continue`) the root node
             // already has a block. In this case, make sure that we don't
             // override it.
@@ -385,6 +403,8 @@ impl DropTree {
 
         debug!("assign_blocks: blocks = {:#?}", blocks);
         assert!(entry_points.is_empty());
+
+        blocks
     }
 
     fn link_blocks<'tcx>(
@@ -456,6 +476,7 @@ impl<'tcx> Scopes<'tcx> {
         Self {
             scopes: Vec::new(),
             breakable_scopes: Vec::new(),
+            const_continuable_scopes: Vec::new(),
             if_then_scope: None,
             unwind_drops: DropTree::new(),
             coroutine_drops: DropTree::new(),
@@ -544,6 +565,39 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 );
                 target.unit()
             }
+        }
+    }
+
+    ///  Start a const-continuable scope, which tracks where `#[const_continue] break` should
+    /// branch to.
+    pub(crate) fn in_const_continuable_scope<F>(
+        &mut self,
+        match_arms: SwitchTargets,
+        state_place: Place<'tcx>,
+        span: Span,
+        f: F,
+    ) -> BlockAnd<()>
+    where
+        F: FnOnce(&mut Builder<'a, 'tcx>),
+    {
+        let region_scope = self.scopes.topmost();
+        let scope = ConstContinuableScope {
+            region_scope,
+            state_place,
+            break_drops: DropTree::new(),
+            match_arms,
+        };
+        self.scopes.const_continuable_scopes.push(scope);
+        f(self);
+        let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
+        assert!(breakable_scope.region_scope == region_scope);
+
+        let break_block =
+            self.build_exit_tree(breakable_scope.break_drops, region_scope, span, None);
+
+        match break_block {
+            Some(block) => block,
+            None => self.cfg.start_new_block().unit(),
         }
     }
 
@@ -675,6 +729,157 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             BreakableTarget::Continue(scope) => {
                 let break_index = get_scope_index(scope);
                 (break_index, None)
+            }
+            BreakableTarget::ConstContinue(scope) => {
+                assert!(value.is_some());
+                let break_index = self
+                    .scopes
+                    .const_continuable_scopes
+                    .iter()
+                    .rposition(|const_continuable_scope| {
+                        const_continuable_scope.region_scope == scope
+                    })
+                    .unwrap_or_else(|| {
+                        span_bug!(span, "no enclosing const-continuable scope found")
+                    });
+
+                let rustc_middle::thir::ExprKind::Scope { value, .. } =
+                    self.thir[value.unwrap()].kind
+                else {
+                    panic!();
+                };
+
+                let scope = &self.scopes.const_continuable_scopes[break_index];
+
+                let state_ty = self.local_decls[scope.state_place.as_local().unwrap()].ty;
+                let discriminant_ty = match state_ty {
+                    ty if ty.is_enum() => ty.discriminant_ty(self.tcx),
+                    ty if ty.is_integral() => ty,
+                    _ => todo!(),
+                };
+
+                let rvalue = match state_ty {
+                    ty if ty.is_enum() => Rvalue::Discriminant(scope.state_place),
+                    ty if ty.is_integral() => Rvalue::Use(Operand::Copy(scope.state_place)),
+                    _ => todo!(),
+                };
+
+                let real_target = match &self.thir[value].kind {
+                    rustc_middle::thir::ExprKind::Adt(value_adt) => scope
+                        .match_arms
+                        .target_for_value(u128::from(value_adt.variant_index.as_u32())),
+                    rustc_middle::thir::ExprKind::Literal { lit, neg } => match lit.node {
+                        LitKind::Int(n, _) => {
+                            let n = if *neg {
+                                (n.get() as i128).overflowing_neg().0 as u128
+                            } else {
+                                n.get()
+                            };
+                            let result = state_ty.primitive_size(self.tcx).truncate(n);
+                            scope.match_arms.target_for_value(result)
+                        }
+                        _ => todo!(),
+                    },
+                    other => todo!("{other:?}"),
+                };
+
+                self.block_context.push(BlockFrame::SubExpr);
+                let state_place = scope.state_place;
+                block = self.expr_into_dest(state_place, block, value).into_block();
+                self.block_context.pop();
+
+                let discr = self.temp(discriminant_ty, source_info.span);
+                let scope_index = self.scopes.scope_index(
+                    self.scopes.const_continuable_scopes[break_index].region_scope,
+                    span,
+                );
+                let scope = &mut self.scopes.const_continuable_scopes[break_index];
+                self.cfg.push_assign(block, source_info, discr, rvalue);
+                let drop_and_continue_block = self.cfg.start_new_block();
+                let imaginary_target = self.cfg.start_new_block();
+                self.cfg.terminate(
+                    block,
+                    source_info,
+                    TerminatorKind::FalseEdge {
+                        real_target: drop_and_continue_block,
+                        imaginary_target,
+                    },
+                );
+
+                let drops = &mut scope.break_drops;
+
+                let drop_idx = self.scopes.scopes[scope_index + 1..]
+                    .iter()
+                    .flat_map(|scope| &scope.drops)
+                    .fold(ROOT_NODE, |drop_idx, &drop| drops.add_drop(drop, drop_idx));
+
+                drops.add_entry_point(imaginary_target, drop_idx);
+
+                self.cfg.terminate(imaginary_target, source_info, TerminatorKind::UnwindResume);
+
+                // FIXME add to drop tree for loop_head
+
+                let region_scope = scope.region_scope;
+                let scope_index = self.scopes.scope_index(region_scope, span);
+                let mut drops = DropTree::new();
+
+                let drop_idx = self.scopes.scopes[scope_index + 1..]
+                    .iter()
+                    .flat_map(|scope| &scope.drops)
+                    .fold(ROOT_NODE, |drop_idx, &drop| drops.add_drop(drop, drop_idx));
+
+                drops.add_entry_point(drop_and_continue_block, drop_idx);
+
+                // `build_drop_trees` doesn't have access to our source_info, so we
+                // create a dummy terminator now. `TerminatorKind::UnwindResume` is used
+                // because MIR type checking will panic if it hasn't been overwritten.
+                // (See `<ExitScopes as DropTreeBuilder>::link_entry_point`.)
+                self.cfg.terminate(
+                    drop_and_continue_block,
+                    source_info,
+                    TerminatorKind::UnwindResume,
+                );
+
+                {
+                    let this = &mut *self;
+                    let blocks = drops.build_mir::<ExitScopes>(&mut this.cfg, Some(real_target));
+                    //let is_coroutine = this.coroutine.is_some();
+
+                    /*// Link the exit drop tree to unwind drop tree.
+                    if drops.drops.iter().any(|drop_node| drop_node.data.kind == DropKind::Value) {
+                        let unwind_target = this.diverge_cleanup_target(region_scope, span);
+                        let mut unwind_indices = IndexVec::from_elem_n(unwind_target, 1);
+                        for (drop_idx, drop_node) in drops.drops.iter_enumerated().skip(1) {
+                            match drop_node.data.kind {
+                                DropKind::Storage | DropKind::ForLint => {
+                                    if is_coroutine {
+                                        let unwind_drop = this.scopes.unwind_drops.add_drop(
+                                            drop_node.data,
+                                            unwind_indices[drop_node.next],
+                                        );
+                                        unwind_indices.push(unwind_drop);
+                                    } else {
+                                        unwind_indices.push(unwind_indices[drop_node.next]);
+                                    }
+                                }
+                                DropKind::Value => {
+                                    let unwind_drop = this
+                                        .scopes
+                                        .unwind_drops
+                                        .add_drop(drop_node.data, unwind_indices[drop_node.next]);
+                                    this.scopes.unwind_drops.add_entry_point(
+                                        blocks[drop_idx].unwrap(),
+                                        unwind_indices[drop_node.next],
+                                    );
+                                    unwind_indices.push(unwind_drop);
+                                }
+                            }
+                        }
+                    }*/
+                    blocks[ROOT_NODE].map(BasicBlock::unit)
+                };
+
+                return self.cfg.start_new_block().unit();
             }
         };
 
@@ -1574,10 +1779,7 @@ impl<'a, 'tcx: 'a> Builder<'a, 'tcx> {
         span: Span,
         continue_block: Option<BasicBlock>,
     ) -> Option<BlockAnd<()>> {
-        let mut blocks = IndexVec::from_elem(None, &drops.drops);
-        blocks[ROOT_NODE] = continue_block;
-
-        drops.build_mir::<ExitScopes>(&mut self.cfg, &mut blocks);
+        let blocks = drops.build_mir::<ExitScopes>(&mut self.cfg, continue_block);
         let is_coroutine = self.coroutine.is_some();
 
         // Link the exit drop tree to unwind drop tree.
@@ -1633,8 +1835,7 @@ impl<'a, 'tcx: 'a> Builder<'a, 'tcx> {
         let drops = &mut self.scopes.coroutine_drops;
         let cfg = &mut self.cfg;
         let fn_span = self.fn_span;
-        let mut blocks = IndexVec::from_elem(None, &drops.drops);
-        drops.build_mir::<CoroutineDrop>(cfg, &mut blocks);
+        let blocks = drops.build_mir::<CoroutineDrop>(cfg, None);
         if let Some(root_block) = blocks[ROOT_NODE] {
             cfg.terminate(
                 root_block,
@@ -1670,9 +1871,7 @@ impl<'a, 'tcx: 'a> Builder<'a, 'tcx> {
         fn_span: Span,
         resume_block: &mut Option<BasicBlock>,
     ) {
-        let mut blocks = IndexVec::from_elem(None, &drops.drops);
-        blocks[ROOT_NODE] = *resume_block;
-        drops.build_mir::<Unwind>(cfg, &mut blocks);
+        let blocks = drops.build_mir::<Unwind>(cfg, *resume_block);
         if let (None, Some(resume)) = (*resume_block, blocks[ROOT_NODE]) {
             cfg.terminate(resume, SourceInfo::outermost(fn_span), TerminatorKind::UnwindResume);
 
