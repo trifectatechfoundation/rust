@@ -745,8 +745,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 block = self.expr_into_dest(state_place, block, value).into_block();
                 self.block_context.pop();
 
-                // FIXME get actual discriminant type
-                let discr = self.temp(self.tcx.types.isize, source_info.span);
+                let discr_ty =
+                    self.local_decls[state_place.as_local().unwrap()].ty.discriminant_ty(self.tcx);
+                let discr = self.temp(discr_ty, source_info.span);
                 let scope = &self.scopes.const_continuable_scopes[break_index];
                 self.cfg.push_assign(
                     block,
@@ -761,7 +762,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         real_target: self.scopes.const_continuable_scopes[break_index]
                             .match_arms
                             .target_for_value(u128::from(value_adt.variant_index.as_u32())),
-                        imaginary_target: self.scopes.const_continuable_scopes[break_index].loop_head,
+                        imaginary_target: self.scopes.const_continuable_scopes[break_index]
+                            .loop_head,
                     },
                 );
 

@@ -270,7 +270,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             let unreachable_block = this.cfg.start_new_block();
                             this.cfg.terminate(unreachable_block, source_info, TerminatorKind::Unreachable);
 
-                            let arm_blocks = arms.iter().map(|&arm| {
+                            let mut arm_blocks = arms.iter().map(|&arm| {
                                 let block = this.cfg.start_new_block();
                                 match &this.thir[arm].pattern.kind {
                                     PatKind::Variant { adt_def, args: _, variant_index, subpatterns } => {
@@ -283,14 +283,27 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     _ => panic!(),
                                 }
                             }).collect::<Vec<_>>();
+                            arm_blocks.sort_by_cached_key(|&(discr, _, _)|{
+                                match &this.thir[arms[0]].pattern.kind {
+                                    PatKind::Variant { adt_def, ..} => {
+                                        adt_def.discriminants(this.tcx).position(|(_, i)| discr.val == i.val).unwrap()
+                                    }
+                                    _ => panic!()
+                                }
+                            });
 
                             let targets = SwitchTargets::new(
                                 arm_blocks.iter().map(|&(discr, block, _arm)| (discr.val, block)),
                                 unreachable_block,
                             );
                             this.in_const_continuable_scope(loop_block, targets.clone(), state_place, |this| {
-                                // FIXME get actual discriminant type
-                                let discr = this.temp(this.tcx.types.isize, source_info.span);
+                                let discr_ty = match &this.thir[arms[0]].pattern.kind {
+                                    PatKind::Variant { adt_def, ..} => {
+                                        adt_def.discriminants(this.tcx).next().unwrap().1.ty
+                                    }
+                                    _ => panic!()
+                                };
+                                let discr = this.temp(discr_ty, source_info.span);
                                 this.cfg.push_assign(body_block, source_info, discr, Rvalue::Discriminant(state_place));
                                 let discr = Operand::Copy(discr);
                                 this.cfg.terminate(body_block, source_info, TerminatorKind::SwitchInt { discr, targets });
