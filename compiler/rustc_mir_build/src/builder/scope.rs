@@ -183,6 +183,7 @@ struct ConstContinuableScope<'tcx> {
     /// the result of a `break` or `return` expression)
     state_place: Place<'tcx>,
 
+    loop_head: BasicBlock,
     match_arms: SwitchTargets,
 }
 
@@ -566,6 +567,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// branch to.
     pub(crate) fn in_const_continuable_scope<F>(
         &mut self,
+        loop_head: BasicBlock,
         match_arms: SwitchTargets,
         state_place: Place<'tcx>,
         f: F,
@@ -574,7 +576,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         F: FnOnce(&mut Builder<'a, 'tcx>) -> Option<BlockAnd<()>>,
     {
         let region_scope = self.scopes.topmost();
-        let scope = ConstContinuableScope { region_scope, state_place, match_arms };
+        let scope = ConstContinuableScope { region_scope, state_place, loop_head, match_arms };
         self.scopes.const_continuable_scopes.push(scope);
         let normal_exit_block = f(self);
         let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
@@ -728,8 +730,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     });
                 let state_place = self.scopes.const_continuable_scopes[break_index].state_place;
 
+                let rustc_middle::thir::ExprKind::Scope { value, .. } =
+                    self.thir[value.unwrap()].kind
+                else {
+                    panic!();
+                };
+                let rustc_middle::thir::ExprKind::Adt(value_adt) = &self.thir[value].kind else {
+                    panic!();
+                };
+
+                //dbg!(&self.thir[value], value_adt);
+
                 self.block_context.push(BlockFrame::SubExpr);
-                block = self.expr_into_dest(state_place, block, value.unwrap()).into_block();
+                block = self.expr_into_dest(state_place, block, value).into_block();
                 self.block_context.pop();
 
                 // FIXME get actual discriminant type
@@ -741,13 +754,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     discr,
                     Rvalue::Discriminant(scope.state_place),
                 );
-                // FIXME turn this into a direct jump + FalseEdge
                 self.cfg.terminate(
                     block,
                     source_info,
-                    TerminatorKind::SwitchInt {
-                        discr: Operand::Copy(discr),
-                        targets: scope.match_arms.clone(),
+                    TerminatorKind::FalseEdge {
+                        real_target: self.scopes.const_continuable_scopes[break_index]
+                            .match_arms
+                            .target_for_value(u128::from(value_adt.variant_index.as_u32())),
+                        imaginary_target: self.scopes.const_continuable_scopes[break_index].loop_head,
                     },
                 );
 

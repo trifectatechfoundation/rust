@@ -288,7 +288,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 arm_blocks.iter().map(|&(discr, block, _arm)| (discr.val, block)),
                                 unreachable_block,
                             );
-                            this.in_const_continuable_scope(targets.clone(), state_place, |this| {
+                            this.in_const_continuable_scope(loop_block, targets.clone(), state_place, |this| {
                                 // FIXME get actual discriminant type
                                 let discr = this.temp(this.tcx.types.isize, source_info.span);
                                 this.cfg.push_assign(body_block, source_info, discr, Rvalue::Discriminant(state_place));
