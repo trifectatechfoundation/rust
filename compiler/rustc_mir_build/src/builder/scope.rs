@@ -83,6 +83,7 @@ that contains only loops and breakable blocks. It tracks where a `break`,
 
 use std::mem;
 
+use rustc_ast::LitKind;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
@@ -731,43 +732,51 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     .unwrap_or_else(|| {
                         span_bug!(span, "no enclosing const-continuable scope found")
                     });
-                let state_place = self.scopes.const_continuable_scopes[break_index].state_place;
 
                 let rustc_middle::thir::ExprKind::Scope { value, .. } =
                     self.thir[value.unwrap()].kind
                 else {
                     panic!();
                 };
-                let rustc_middle::thir::ExprKind::Adt(value_adt) = &self.thir[value].kind else {
-                    panic!();
+
+                let scope = &self.scopes.const_continuable_scopes[break_index];
+
+                let state_ty = self.local_decls[scope.state_place.as_local().unwrap()].ty;
+                let discriminant_ty = match state_ty {
+                    ty if ty.is_enum() => ty.discriminant_ty(self.tcx),
+                    ty if ty.is_integral() => ty,
+                    _ => todo!(),
                 };
 
-                //dbg!(&self.thir[value], value_adt);
+                let rvalue = match state_ty {
+                    ty if ty.is_enum() => Rvalue::Discriminant(scope.state_place),
+                    ty if ty.is_integral() => Rvalue::Use(Operand::Copy(scope.state_place)),
+                    _ => todo!(),
+                };
+
+                let real_target = match &self.thir[value].kind {
+                    rustc_middle::thir::ExprKind::Adt(value_adt) => scope
+                        .match_arms
+                        .target_for_value(u128::from(value_adt.variant_index.as_u32())),
+                    rustc_middle::thir::ExprKind::Literal { lit, neg: _ } => match lit.node {
+                        LitKind::Int(pu, _) => scope.match_arms.target_for_value(pu.get()),
+                        _ => todo!(),
+                    },
+                    other => todo!("{other:?}"),
+                };
 
                 self.block_context.push(BlockFrame::SubExpr);
+                let state_place = scope.state_place;
                 block = self.expr_into_dest(state_place, block, value).into_block();
                 self.block_context.pop();
 
-                let discr_ty =
-                    self.local_decls[state_place.as_local().unwrap()].ty.discriminant_ty(self.tcx);
-                let discr = self.temp(discr_ty, source_info.span);
+                let discr = self.temp(discriminant_ty, source_info.span);
                 let scope = &self.scopes.const_continuable_scopes[break_index];
-                self.cfg.push_assign(
-                    block,
-                    source_info,
-                    discr,
-                    Rvalue::Discriminant(scope.state_place),
-                );
+                self.cfg.push_assign(block, source_info, discr, rvalue);
                 self.cfg.terminate(
                     block,
                     source_info,
-                    TerminatorKind::FalseEdge {
-                        real_target: self.scopes.const_continuable_scopes[break_index]
-                            .match_arms
-                            .target_for_value(u128::from(value_adt.variant_index.as_u32())),
-                        imaginary_target: self.scopes.const_continuable_scopes[break_index]
-                            .loop_head,
-                    },
+                    TerminatorKind::FalseEdge { real_target, imaginary_target: scope.loop_head },
                 );
 
                 return self.cfg.start_new_block().unit();
