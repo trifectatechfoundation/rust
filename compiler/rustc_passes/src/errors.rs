@@ -32,6 +32,22 @@ pub(crate) struct AutoDiffAttr {
     pub attr_span: Span,
 }
 
+#[derive(Diagnostic)]
+#[diag(passes_loop_match_attr)]
+pub(crate) struct LoopMatchAttr {
+    #[primary_span]
+    #[label]
+    pub attr_span: Span,
+}
+
+#[derive(Diagnostic)]
+#[diag(passes_const_continue_attr)]
+pub(crate) struct ConstContinueAttr {
+    #[primary_span]
+    #[label]
+    pub attr_span: Span,
+}
+
 #[derive(LintDiagnostic)]
 #[diag(passes_outer_crate_level_attr)]
 pub(crate) struct OuterCrateLevelAttr;

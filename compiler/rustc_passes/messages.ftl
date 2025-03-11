@@ -53,6 +53,14 @@ passes_autodiff_attr =
     `#[autodiff]` should be applied to a function
     .label = not a function
 
+passes_loop_match_attr =
+    `#[loop_match]` should be applied to a loop
+    .label = not a loop
+
+passes_const_continue_attr =
+    `#[const_continue]` should be applied to a break expression
+    .label = not a break expression
+
 passes_both_ffi_const_and_pure =
     `#[ffi_const]` function cannot be `#[ffi_pure]`
 

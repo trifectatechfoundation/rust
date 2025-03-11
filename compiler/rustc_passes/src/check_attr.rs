@@ -259,6 +259,8 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                         }
                         [sym::linkage, ..] => self.check_linkage(attr, span, target),
                         [sym::rustc_pub_transparent, ..] => self.check_rustc_pub_transparent(attr.span(), span, attrs),
+                        [sym::loop_match, ..] => self.check_loop_match(attr.span(), target),
+                        [sym::const_continue, ..] => self.check_const_continue(attr.span(), target),
                         [
                             // ok
                             sym::allow
@@ -286,10 +288,7 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                             | sym::lang
                             | sym::needs_allocator
                             | sym::default_lib_allocator
-                            | sym::custom_mir
-                            // FIXME check that we only attach it to the right kind of items
-                            | sym::loop_match
-                            | sym::const_continue,
+                            | sym::custom_mir,
                             ..
                         ] => {}
                         [name, ..] => {
@@ -2590,6 +2589,24 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
             _ => {
                 self.dcx().emit_err(errors::AutoDiffAttr { attr_span: span });
                 self.abort.set(true);
+            }
+        }
+    }
+
+    fn check_loop_match(&self, span: Span, target: Target) {
+        match target {
+            Target::Expression => return,
+            _ => {
+                self.dcx().emit_err(errors::LoopMatchAttr { attr_span: span });
+            }
+        }
+    }
+
+    fn check_const_continue(&self, span: Span, target: Target) {
+        match target {
+            Target::Expression => return,
+            _ => {
+                self.dcx().emit_err(errors::ConstContinueAttr { attr_span: span });
             }
         }
     }
