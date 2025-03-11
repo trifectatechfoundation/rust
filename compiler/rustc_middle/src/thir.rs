@@ -1134,8 +1134,8 @@ mod size_asserts {
     use super::*;
     // tidy-alphabetical-start
     static_assert_size!(Block, 48);
-    //static_assert_size!(Expr<'_>, 72);
-    //static_assert_size!(ExprKind<'_>, 40);
+    static_assert_size!(Expr<'_>, 72);
+    static_assert_size!(ExprKind<'_>, 40);
     static_assert_size!(Pat<'_>, 64);
     static_assert_size!(PatKind<'_>, 48);
     static_assert_size!(Stmt<'_>, 48);

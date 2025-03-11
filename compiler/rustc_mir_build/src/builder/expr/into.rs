@@ -317,7 +317,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 None
                             })
                         })
-                );
+                    );
 
                     this.cfg.goto(body_block, source_info, loop_block);
 
@@ -631,7 +631,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
 
             ExprKind::Continue { .. }
-            | ExprKind::ConstContinue { .. } // FIXME directly jump to target branch using FakeEdge
+            | ExprKind::ConstContinue { .. }
             | ExprKind::Break { .. }
             | ExprKind::Return { .. }
             | ExprKind::Become { .. } => {
