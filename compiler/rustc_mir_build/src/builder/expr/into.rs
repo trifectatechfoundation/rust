@@ -8,6 +8,9 @@ use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
+use rustc_middle::ty::util::Discr;
+use rustc_pattern_analysis::constructor::Constructor;
+use rustc_pattern_analysis::rustc::RustcPatCtxt;
 use rustc_span::source_map::Spanned;
 use tracing::{debug, instrument};
 
@@ -244,6 +247,29 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::LoopMatch { state, region_scope, ref arms, .. } => {
                 // FIXME add diagram
 
+                let dropless_arena = rustc_arena::DroplessArena::default();
+                let typeck_results = this.tcx.typeck(this.def_id);
+                let lint_level = this.tcx.local_def_id_to_hir_id(this.def_id);
+
+                // the PatCtxt is normally used in pattern exhaustiveness checking, but reused here
+                // because it performs normalization and const evaluation.
+                let cx = RustcPatCtxt {
+                    tcx: this.tcx,
+                    typeck_results,
+                    module: this.tcx.parent_module(lint_level).to_def_id(),
+                    // FIXME(#132279): We're in a body, should handle opaques.
+                    typing_env: rustc_middle::ty::TypingEnv::non_body_analysis(
+                        this.tcx,
+                        this.def_id,
+                    ),
+                    dropless_arena: &dropless_arena,
+                    match_lint_level: lint_level,
+                    whole_match_span: Some(rustc_span::Span::default()),
+                    scrut_span: rustc_span::Span::default(),
+                    refutable: true,
+                    known_valid_scrutinee: true,
+                };
+
                 let loop_block = this.cfg.start_new_block();
 
                 // Start the loop.
@@ -264,51 +290,77 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     this.diverge_from(loop_block);
 
                     let state_place = unpack!(body_block = this.as_place(body_block, state));
+                    let state_ty = this.thir.exprs[state].ty;
+
+                    // the type of the value that is switched on by the `SwitchInt`
+                    let discr_ty = match state_ty {
+                        ty if ty.is_enum() => ty.discriminant_ty(this.tcx),
+                        ty if ty.is_integral() => ty,
+                        _ => todo!(),
+                    };
+
+                    let rvalue = match state_ty {
+                        ty if ty.is_enum() => Rvalue::Discriminant(state_place),
+                        ty if ty.is_integral() => Rvalue::Use(Operand::Copy(state_place)),
+                        _ => todo!(),
+                    };
+
+                    // block and arm of the wildcard pattern (if any)
+                    let mut otherwise = None;
 
                     unpack!(
                         body_block = this.in_scope(
                             (region_scope, source_info),
                             LintLevel::Inherited,
                             move |this| {
-                                let unreachable_block = this.cfg.start_new_block();
-                                this.cfg.terminate(
-                                    unreachable_block,
-                                    source_info,
-                                    TerminatorKind::Unreachable,
-                                );
+                                let mut arm_blocks = Vec::with_capacity(arms.len());
+                                for &arm in arms {
+                                    let pat = &this.thir[arm].pattern;
+                                    let deconstructed_pat = cx.lower_pat(pat);
 
-                                let mut arm_blocks = arms
-                                    .iter()
-                                    .map(|&arm| {
-                                        let block = this.cfg.start_new_block();
-                                        match &this.thir[arm].pattern.kind {
-                                            PatKind::Variant {
-                                                adt_def,
-                                                args: _,
-                                                variant_index,
-                                                subpatterns,
-                                            } => {
-                                                assert!(subpatterns.is_empty());
+                                    match deconstructed_pat.ctor() {
+                                        Constructor::Variant(variant_index) => {
+                                            let PatKind::Variant { adt_def, .. } = pat.kind else {
+                                                unreachable!()
+                                            };
 
-                                                let discr = adt_def
-                                                    .discriminants(this.tcx)
-                                                    .find(|(var, _discr)| var == variant_index)
-                                                    .unwrap()
-                                                    .1;
+                                            let discr = adt_def
+                                                .discriminant_for_variant(this.tcx, *variant_index);
 
-                                                (discr, block, arm)
-                                            }
-                                            _ => panic!(),
+                                            let block = this.cfg.start_new_block();
+                                            arm_blocks.push((discr, block, arm))
                                         }
-                                    })
-                                    .collect::<Vec<_>>();
+                                        Constructor::IntRange(int_range) => {
+                                            assert!(int_range.is_singleton());
+
+                                            let bits = state_ty.primitive_size(this.tcx).bits();
+                                            let Some(value) = int_range.lo.as_finite_int(bits)
+                                            else {
+                                                todo!()
+                                            };
+
+                                            let discr =
+                                                Discr { val: value, ty: **deconstructed_pat.ty() };
+
+                                            let block = this.cfg.start_new_block();
+                                            arm_blocks.push((discr, block, arm))
+                                        }
+                                        Constructor::Wildcard => {
+                                            otherwise = Some((this.cfg.start_new_block(), arm));
+                                        }
+                                        other => todo!("{:?}", other),
+                                    }
+                                }
+
                                 arm_blocks.sort_by_cached_key(|&(discr, _, _)| {
                                     match &this.thir[arms[0]].pattern.kind {
                                         PatKind::Variant { adt_def, .. } => adt_def
                                             .discriminants(this.tcx)
                                             .position(|(_, i)| discr.val == i.val)
                                             .unwrap(),
-                                        _ => panic!(),
+                                        PatKind::ExpandedConstant { .. } => 0,
+                                        PatKind::Constant { .. } => 0,
+                                        other => todo!("{:?}", other),
                                     }
                                 });
 
@@ -316,25 +368,30 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     arm_blocks
                                         .iter()
                                         .map(|&(discr, block, _arm)| (discr.val, block)),
-                                    unreachable_block,
+                                    if let Some((block, _)) = otherwise {
+                                        block
+                                    } else {
+                                        let unreachable_block = this.cfg.start_new_block();
+                                        this.cfg.terminate(
+                                            unreachable_block,
+                                            source_info,
+                                            TerminatorKind::Unreachable,
+                                        );
+                                        unreachable_block
+                                    },
                                 );
+
                                 this.in_const_continuable_scope(
                                     loop_block,
                                     targets.clone(),
                                     state_place,
                                     |this| {
-                                        let discr_ty = match &this.thir[arms[0]].pattern.kind {
-                                            PatKind::Variant { adt_def, .. } => {
-                                                adt_def.discriminants(this.tcx).next().unwrap().1.ty
-                                            }
-                                            _ => panic!(),
-                                        };
                                         let discr = this.temp(discr_ty, source_info.span);
                                         this.cfg.push_assign(
                                             body_block,
                                             source_info,
                                             discr,
-                                            Rvalue::Discriminant(state_place),
+                                            rvalue,
                                         );
                                         let discr = Operand::Copy(discr);
                                         this.cfg.terminate(
@@ -343,7 +400,12 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             TerminatorKind::SwitchInt { discr, targets },
                                         );
 
-                                        for (_discr, mut block, arm) in arm_blocks {
+                                        let it = arm_blocks
+                                            .into_iter()
+                                            .map(|(_, block, arm)| (block, arm))
+                                            .chain(otherwise);
+
+                                        for (mut block, arm) in it {
                                             let empty_place = this.get_unit_temp();
                                             unpack!(
                                                 block = this.expr_into_dest(
