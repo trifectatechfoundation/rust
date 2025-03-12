@@ -20,6 +20,7 @@ fn main() {
                     break 'blk State::B
                 }
                 State::B => {
+                    //let _a = 0;
                     if true {
                         #[const_continue]
                         break 'blk State::C;
