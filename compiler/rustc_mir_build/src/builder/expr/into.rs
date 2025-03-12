@@ -1,5 +1,6 @@
 //! See docs in build/expr/mod.rs
 
+use rustc_abi::VariantIdx;
 use rustc_ast::{AsmMacro, InlineAsmOptions};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
@@ -328,7 +329,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                                 .discriminant_for_variant(this.tcx, *variant_index);
 
                                             let block = this.cfg.start_new_block();
-                                            arm_blocks.push((discr, block, arm))
+                                            arm_blocks.push((*variant_index, discr, block, arm))
                                         }
                                         Constructor::IntRange(int_range) => {
                                             assert!(int_range.is_singleton());
@@ -343,7 +344,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                                 Discr { val: value, ty: **deconstructed_pat.ty() };
 
                                             let block = this.cfg.start_new_block();
-                                            arm_blocks.push((discr, block, arm))
+                                            arm_blocks.push((VariantIdx::ZERO, discr, block, arm))
                                         }
                                         Constructor::Wildcard => {
                                             otherwise = Some((this.cfg.start_new_block(), arm));
@@ -352,22 +353,16 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     }
                                 }
 
-                                arm_blocks.sort_by_cached_key(|&(discr, _, _)| {
-                                    match &this.thir[arms[0]].pattern.kind {
-                                        PatKind::Variant { adt_def, .. } => adt_def
-                                            .discriminants(this.tcx)
-                                            .position(|(_, i)| discr.val == i.val)
-                                            .unwrap(),
-                                        PatKind::ExpandedConstant { .. } => 0,
-                                        PatKind::Constant { .. } => 0,
-                                        other => todo!("{:?}", other),
-                                    }
-                                });
+                                // if we're matching on an enum, the discriminant order in the `SwitchInt`
+                                // targets should match the order yielded by `AdtDef::discriminants`.
+                                if state_ty.is_enum() {
+                                    arm_blocks.sort_by_key(|(variant_idx, ..)| *variant_idx);
+                                }
 
                                 let targets = SwitchTargets::new(
                                     arm_blocks
                                         .iter()
-                                        .map(|&(discr, block, _arm)| (discr.val, block)),
+                                        .map(|&(_, discr, block, _arm)| (discr.val, block)),
                                     if let Some((block, _)) = otherwise {
                                         block
                                     } else {
@@ -402,7 +397,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                                         let it = arm_blocks
                                             .into_iter()
-                                            .map(|(_, block, arm)| (block, arm))
+                                            .map(|(_, _, block, arm)| (block, arm))
                                             .chain(otherwise);
 
                                         for (mut block, arm) in it {
