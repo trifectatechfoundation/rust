@@ -11,6 +11,7 @@ use rustc_middle::thir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
 use rustc_middle::ty::util::Discr;
 use rustc_pattern_analysis::constructor::Constructor;
+use rustc_pattern_analysis::rustc::DeconstructedPat;
 use rustc_pattern_analysis::rustc::RustcPatCtxt;
 use rustc_span::source_map::Spanned;
 use tracing::{debug, instrument};
@@ -319,37 +320,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 let mut arm_blocks = Vec::with_capacity(arms.len());
                                 for &arm in arms {
                                     let pat = &this.thir[arm].pattern;
-                                    let deconstructed_pat = cx.lower_pat(pat);
 
-                                    match deconstructed_pat.ctor() {
-                                        Constructor::Variant(variant_index) => {
-                                            let PatKind::Variant { adt_def, .. } = pat.kind else {
-                                                unreachable!()
-                                            };
-
-                                            let discr = adt_def
-                                                .discriminant_for_variant(this.tcx, *variant_index);
-
-                                            let block = this.cfg.start_new_block();
-                                            arm_blocks.push((*variant_index, discr, block, arm))
-                                        }
-                                        Constructor::IntRange(int_range) => {
-                                            assert!(int_range.is_singleton());
-
-                                            let bits = state_ty.primitive_size(this.tcx).bits();
-                                            let value = int_range.lo.as_finite_int(bits).unwrap();
-
-                                            let discr =
-                                                Discr { val: value, ty: **deconstructed_pat.ty() };
-
-                                            let block = this.cfg.start_new_block();
-                                            arm_blocks.push((VariantIdx::ZERO, discr, block, arm))
-                                        }
-                                        Constructor::Wildcard => {
-                                            otherwise = Some((this.cfg.start_new_block(), arm));
-                                        }
-                                        other => todo!("{:?}", other),
-                                    }
+                                    this.loop_match_patterns(
+                                        arm,
+                                        &cx.lower_pat(pat),
+                                        None,
+                                        &mut arm_blocks,
+                                        &mut otherwise,
+                                    );
                                 }
 
                                 // if we're matching on an enum, the discriminant order in the `SwitchInt`
@@ -840,6 +818,42 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Let { .. } => true,
             ExprKind::Scope { value, .. } => self.is_let(value),
             _ => false,
+        }
+    }
+
+    fn loop_match_patterns(
+        &mut self,
+        arm_id: ArmId,
+        pat: &DeconstructedPat<'_, 'tcx>,
+        current_block: Option<BasicBlock>,
+        result: &mut Vec<(VariantIdx, Discr<'tcx>, BasicBlock, ArmId)>,
+        otherwise: &mut Option<(BasicBlock, ArmId)>,
+    ) {
+        match pat.ctor() {
+            Constructor::Variant(variant_index) => {
+                let PatKind::Variant { adt_def, .. } = pat.data().kind else { unreachable!() };
+
+                let discr = adt_def.discriminant_for_variant(self.tcx, *variant_index);
+
+                let block = current_block.unwrap_or_else(|| self.cfg.start_new_block());
+                result.push((*variant_index, discr, block, arm_id));
+            }
+            Constructor::IntRange(int_range) => {
+                assert!(int_range.is_singleton());
+
+                let bits = pat.ty().primitive_size(self.tcx).bits();
+                let value = int_range.lo.as_finite_int(bits).unwrap();
+
+                let discr = Discr { val: value, ty: **pat.ty() };
+
+                let block = current_block.unwrap_or_else(|| self.cfg.start_new_block());
+                result.push((VariantIdx::ZERO, discr, block, arm_id));
+            }
+            Constructor::Wildcard => {
+                let block = current_block.unwrap_or_else(|| self.cfg.start_new_block());
+                *otherwise = Some((block, arm_id))
+            }
+            other => todo!("{:?}", other),
         }
     }
 }
