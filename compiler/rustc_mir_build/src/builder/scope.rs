@@ -758,8 +758,16 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     rustc_middle::thir::ExprKind::Adt(value_adt) => scope
                         .match_arms
                         .target_for_value(u128::from(value_adt.variant_index.as_u32())),
-                    rustc_middle::thir::ExprKind::Literal { lit, neg: _ } => match lit.node {
-                        LitKind::Int(pu, _) => scope.match_arms.target_for_value(pu.get()),
+                    rustc_middle::thir::ExprKind::Literal { lit, neg } => match lit.node {
+                        LitKind::Int(n, _) => {
+                            let n = if *neg {
+                                (n.get() as i128).overflowing_neg().0 as u128
+                            } else {
+                                n.get()
+                            };
+                            let result = state_ty.primitive_size(self.tcx).truncate(n);
+                            scope.match_arms.target_for_value(result)
+                        }
                         _ => todo!(),
                     },
                     other => todo!("{other:?}"),

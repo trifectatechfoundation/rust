@@ -8,7 +8,7 @@ fn main() {
     'a: loop {
         state = 'blk: {
             match state {
-                1 => {
+                -1 => {
                     if true {
                         #[const_continue]
                         break 'blk 2;
@@ -20,7 +20,7 @@ fn main() {
                 }
                 0 => {
                     #[const_continue]
-                    break 'blk 1;
+                    break 'blk -1;
                 }
                 2 => break 'a,
                 _ => break 'a,
