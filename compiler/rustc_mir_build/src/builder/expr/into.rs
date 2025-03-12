@@ -330,6 +330,15 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     );
                                 }
 
+                                // handle patterns like `None | None` or two different arms that
+                                // have the same pattern.
+                                //
+                                // NOTE: why this works is a bit subtle: we always want to pick the
+                                // first arm for a pattern, and because this is a stable sort that
+                                // works out.
+                                arm_blocks.sort_by_key(|(_, discr, _, _)| discr.val);
+                                arm_blocks.dedup_by_key(|(_, discr, _, _)| discr.val);
+
                                 // if we're matching on an enum, the discriminant order in the `SwitchInt`
                                 // targets should match the order yielded by `AdtDef::discriminants`.
                                 if state_ty.is_enum() {
@@ -378,6 +387,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             .chain(otherwise);
 
                                         for (mut block, arm) in it {
+                                            if this.cfg.block_data(block).terminator.is_some() {
+                                                continue; // this can occur with or-patterns
+                                            }
+
                                             let empty_place = this.get_unit_temp();
                                             unpack!(
                                                 block = this.expr_into_dest(
@@ -850,8 +863,18 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 result.push((VariantIdx::ZERO, discr, block, arm_id));
             }
             Constructor::Wildcard => {
+                // the first wildcard wins
+                if otherwise.is_none() {
+                    let block = current_block.unwrap_or_else(|| self.cfg.start_new_block());
+                    *otherwise = Some((block, arm_id))
+                }
+            }
+            Constructor::Or => {
                 let block = current_block.unwrap_or_else(|| self.cfg.start_new_block());
-                *otherwise = Some((block, arm_id))
+
+                for indexed in pat.iter_fields() {
+                    self.loop_match_patterns(arm_id, &indexed.pat, Some(block), result, otherwise);
+                }
             }
             other => todo!("{:?}", other),
         }
