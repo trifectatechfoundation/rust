@@ -335,10 +335,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             assert!(int_range.is_singleton());
 
                                             let bits = state_ty.primitive_size(this.tcx).bits();
-                                            let Some(value) = int_range.lo.as_finite_int(bits)
-                                            else {
-                                                todo!()
-                                            };
+                                            let value = int_range.lo.as_finite_int(bits).unwrap();
 
                                             let discr =
                                                 Discr { val: value, ty: **deconstructed_pat.ty() };
