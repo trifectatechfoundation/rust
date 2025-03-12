@@ -266,57 +266,104 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     let state_place = unpack!(body_block = this.as_place(body_block, state));
 
                     unpack!(
-                        body_block = this.in_scope((region_scope, source_info), LintLevel::Inherited, move |this| {
-                            let unreachable_block = this.cfg.start_new_block();
-                            this.cfg.terminate(unreachable_block, source_info, TerminatorKind::Unreachable);
+                        body_block = this.in_scope(
+                            (region_scope, source_info),
+                            LintLevel::Inherited,
+                            move |this| {
+                                let unreachable_block = this.cfg.start_new_block();
+                                this.cfg.terminate(
+                                    unreachable_block,
+                                    source_info,
+                                    TerminatorKind::Unreachable,
+                                );
 
-                            let mut arm_blocks = arms.iter().map(|&arm| {
-                                let block = this.cfg.start_new_block();
-                                match &this.thir[arm].pattern.kind {
-                                    PatKind::Variant { adt_def, args: _, variant_index, subpatterns } => {
-                                        assert!(subpatterns.is_empty());
+                                let mut arm_blocks = arms
+                                    .iter()
+                                    .map(|&arm| {
+                                        let block = this.cfg.start_new_block();
+                                        match &this.thir[arm].pattern.kind {
+                                            PatKind::Variant {
+                                                adt_def,
+                                                args: _,
+                                                variant_index,
+                                                subpatterns,
+                                            } => {
+                                                assert!(subpatterns.is_empty());
 
-                                        let discr = adt_def.discriminants(this.tcx).find(|(var, _discr)| var == variant_index).unwrap().1;
+                                                let discr = adt_def
+                                                    .discriminants(this.tcx)
+                                                    .find(|(var, _discr)| var == variant_index)
+                                                    .unwrap()
+                                                    .1;
 
-                                        (discr, block, arm)
+                                                (discr, block, arm)
+                                            }
+                                            _ => panic!(),
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                arm_blocks.sort_by_cached_key(|&(discr, _, _)| {
+                                    match &this.thir[arms[0]].pattern.kind {
+                                        PatKind::Variant { adt_def, .. } => adt_def
+                                            .discriminants(this.tcx)
+                                            .position(|(_, i)| discr.val == i.val)
+                                            .unwrap(),
+                                        _ => panic!(),
                                     }
-                                    _ => panic!(),
-                                }
-                            }).collect::<Vec<_>>();
-                            arm_blocks.sort_by_cached_key(|&(discr, _, _)|{
-                                match &this.thir[arms[0]].pattern.kind {
-                                    PatKind::Variant { adt_def, ..} => {
-                                        adt_def.discriminants(this.tcx).position(|(_, i)| discr.val == i.val).unwrap()
-                                    }
-                                    _ => panic!()
-                                }
-                            });
+                                });
 
-                            let targets = SwitchTargets::new(
-                                arm_blocks.iter().map(|&(discr, block, _arm)| (discr.val, block)),
-                                unreachable_block,
-                            );
-                            this.in_const_continuable_scope(loop_block, targets.clone(), state_place, |this| {
-                                let discr_ty = match &this.thir[arms[0]].pattern.kind {
-                                    PatKind::Variant { adt_def, ..} => {
-                                        adt_def.discriminants(this.tcx).next().unwrap().1.ty
-                                    }
-                                    _ => panic!()
-                                };
-                                let discr = this.temp(discr_ty, source_info.span);
-                                this.cfg.push_assign(body_block, source_info, discr, Rvalue::Discriminant(state_place));
-                                let discr = Operand::Copy(discr);
-                                this.cfg.terminate(body_block, source_info, TerminatorKind::SwitchInt { discr, targets });
+                                let targets = SwitchTargets::new(
+                                    arm_blocks
+                                        .iter()
+                                        .map(|&(discr, block, _arm)| (discr.val, block)),
+                                    unreachable_block,
+                                );
+                                this.in_const_continuable_scope(
+                                    loop_block,
+                                    targets.clone(),
+                                    state_place,
+                                    |this| {
+                                        let discr_ty = match &this.thir[arms[0]].pattern.kind {
+                                            PatKind::Variant { adt_def, .. } => {
+                                                adt_def.discriminants(this.tcx).next().unwrap().1.ty
+                                            }
+                                            _ => panic!(),
+                                        };
+                                        let discr = this.temp(discr_ty, source_info.span);
+                                        this.cfg.push_assign(
+                                            body_block,
+                                            source_info,
+                                            discr,
+                                            Rvalue::Discriminant(state_place),
+                                        );
+                                        let discr = Operand::Copy(discr);
+                                        this.cfg.terminate(
+                                            body_block,
+                                            source_info,
+                                            TerminatorKind::SwitchInt { discr, targets },
+                                        );
 
-                                for (_discr, mut block, arm) in arm_blocks {
-                                    let empty_place = this.get_unit_temp();
-                                    unpack!(block = this.expr_into_dest(empty_place, block, this.thir[arm].body));
-                                    this.cfg.terminate(block, source_info, TerminatorKind::Unreachable);
-                                }
+                                        for (_discr, mut block, arm) in arm_blocks {
+                                            let empty_place = this.get_unit_temp();
+                                            unpack!(
+                                                block = this.expr_into_dest(
+                                                    empty_place,
+                                                    block,
+                                                    this.thir[arm].body
+                                                )
+                                            );
+                                            this.cfg.terminate(
+                                                block,
+                                                source_info,
+                                                TerminatorKind::Unreachable,
+                                            );
+                                        }
 
-                                None
-                            })
-                        })
+                                        None
+                                    },
+                                )
+                            }
+                        )
                     );
 
                     this.cfg.goto(body_block, source_info, loop_block);

@@ -369,7 +369,6 @@ pub enum ExprKind<'tcx> {
 
         region_scope: region::Scope,
         //lint_level: LintLevel,
-
         arms: Box<[ArmId]>,
         match_source: MatchSource,
     },
