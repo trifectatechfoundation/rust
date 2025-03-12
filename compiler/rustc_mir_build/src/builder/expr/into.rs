@@ -250,6 +250,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                 let dropless_arena = rustc_arena::DroplessArena::default();
                 let typeck_results = this.tcx.typeck(this.def_id);
+
+                // FIXME use the lint level from `ExprKind::LoopMatch`
                 let lint_level = this.tcx.local_def_id_to_hir_id(this.def_id);
 
                 // the PatCtxt is normally used in pattern exhaustiveness checking, but reused here
