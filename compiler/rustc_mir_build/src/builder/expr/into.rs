@@ -11,8 +11,7 @@ use rustc_middle::thir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
 use rustc_middle::ty::util::Discr;
 use rustc_pattern_analysis::constructor::Constructor;
-use rustc_pattern_analysis::rustc::DeconstructedPat;
-use rustc_pattern_analysis::rustc::RustcPatCtxt;
+use rustc_pattern_analysis::rustc::{DeconstructedPat, RustcPatCtxt};
 use rustc_span::source_map::Spanned;
 use tracing::{debug, instrument};
 
@@ -300,7 +299,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     let discr_ty = match state_ty {
                         ty if ty.is_enum() => ty.discriminant_ty(this.tcx),
                         ty if ty.is_integral() => ty,
-                        _ => todo!(),
+                        other => todo!("{other:?}"),
                     };
 
                     let rvalue = match state_ty {

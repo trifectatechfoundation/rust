@@ -21,6 +21,7 @@ use rustc_middle::{bug, span_bug};
 use rustc_span::{Span, sym};
 use tracing::{debug, info, instrument, trace};
 
+use crate::errors::*;
 use crate::thir::cx::ThirBuildCx;
 
 impl<'tcx> ThirBuildCx<'tcx> {
@@ -798,15 +799,20 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     .any(|attr| attr.has_name(sym::const_continue));
                 if is_const_continue {
                     match dest.target_id {
-                        Ok(target_id) => ExprKind::ConstContinue {
-                            label: region::Scope {
-                                local_id: target_id.local_id,
-                                data: region::ScopeData::Node,
-                            },
-                            value: self.mirror_expr(
-                                value.expect("missing value for #[const_continue] break"),
-                            ),
-                        },
+                        Ok(target_id) => {
+                            let Some(value) = value else {
+                                let span = expr.span;
+                                self.tcx.dcx().emit_fatal(ConstContinueMissingValue { span })
+                            };
+
+                            ExprKind::ConstContinue {
+                                label: region::Scope {
+                                    local_id: target_id.local_id,
+                                    data: region::ScopeData::Node,
+                                },
+                                value: self.mirror_expr(value),
+                            }
+                        }
                         Err(err) => bug!("invalid loop id for break: {}", err),
                     }
                 } else {
@@ -863,27 +869,57 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     .iter()
                     .any(|attr| attr.has_name(sym::loop_match));
                 if is_loop_match {
-                    assert!(body.stmts.is_empty());
-                    let hir::ExprKind::Assign(state, block_expr, _) = body.expr.unwrap().kind
+                    let dcx = self.tcx.dcx();
+
+                    if let ([first, ..], [.., last]) = (body.stmts, body.stmts) {
+                        dcx.emit_fatal(LoopMatchBadStatements { span: first.span.to(last.span) })
+                    }
+
+                    let Some(loop_body_expr) = body.expr else {
+                        dcx.emit_fatal(LoopMatchMissingAssignment { span: body.span })
+                    };
+
+                    let hir::ExprKind::Assign(state, rhs_expr, _) = loop_body_expr.kind else {
+                        dcx.emit_fatal(LoopMatchMissingAssignment { span: loop_body_expr.span })
+                    };
+
+                    let hir::ExprKind::Block(block_body, _) = rhs_expr.kind else {
+                        dcx.emit_fatal(LoopMatchBadRhs { span: rhs_expr.span })
+                    };
+
+                    if let Some(first) = block_body.stmts.first() {
+                        let span = first.span.to(block_body.stmts.last().unwrap().span);
+                        dcx.emit_fatal(LoopMatchBadStatements { span })
+                    }
+
+                    let Some(block_body_expr) = block_body.expr else {
+                        dcx.emit_fatal(LoopMatchBadRhs { span: block_body.span })
+                    };
+
+                    let hir::ExprKind::Match(scrutinee, arms, match_source) = block_body_expr.kind
                     else {
-                        panic!();
+                        dcx.emit_fatal(LoopMatchBadRhs { span: block_body_expr.span })
                     };
-                    let hir::ExprKind::Block(block_body, _) = block_expr.kind else {
-                        panic!();
+
+                    fn local(expr: &rustc_hir::Expr<'_>) -> Option<hir::HirId> {
+                        if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = expr.kind {
+                            if let Res::Local(hir_id) = path.res {
+                                return Some(hir_id);
+                            }
+                        }
+
+                        None
+                    }
+
+                    let Some(scrutinee_hir_id) = local(scrutinee) else {
+                        dcx.emit_fatal(LoopMatchInvalidMatch { span: scrutinee.span })
                     };
-                    assert!(block_body.stmts.is_empty());
-                    let hir::ExprKind::Match(discr, arms, match_source) =
-                        block_body.expr.unwrap().kind
-                    else {
-                        panic!();
-                    };
-                    match (state.kind, discr.kind) {
-                        (
-                            hir::ExprKind::Path(hir::QPath::Resolved(_, state)),
-                            hir::ExprKind::Path(hir::QPath::Resolved(_, discr)),
-                        ) if state.segments.iter().map(|seg| seg.ident).collect::<Vec<_>>()
-                            == discr.segments.iter().map(|seg| seg.ident).collect::<Vec<_>>() => {}
-                        _ => panic!(),
+
+                    if local(state) != Some(scrutinee_hir_id) {
+                        dcx.emit_fatal(LoopMatchInvalidUpdate {
+                            scrutinee: scrutinee.span,
+                            lhs: state.span,
+                        })
                     }
 
                     ExprKind::LoopMatch {

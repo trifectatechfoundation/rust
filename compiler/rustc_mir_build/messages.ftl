@@ -478,3 +478,23 @@ mir_build_unused_unsafe_enclosing_block_label = because it's nested under this `
 mir_build_variant_defined_here = not covered
 
 mir_build_wrap_suggestion = consider wrapping the function body in an unsafe block
+
+mir_build_loop_match_invalid_update =
+    invalid update of the `loop_match` state
+    .label = the assignment must update this variable
+
+mir_build_loop_match_invalid_match =
+    invalid match on `loop_match` state
+    .note = only matches on local variables are valid
+
+mir_build_loop_match_bad_statements =
+    statements are not allowed in this position within a `loop_match`
+
+mir_build_loop_match_bad_rhs =
+    this expression must be a single `match` wrapped in a labelled block
+
+mir_build_loop_match_missing_assignment =
+    expected a single assignment expression
+
+mir_build_const_continue_missing_value =
+    a `const_continue` must break to a label with a value
