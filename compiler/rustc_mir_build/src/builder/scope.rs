@@ -579,7 +579,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         f: F,
     ) -> BlockAnd<()>
     where
-        F: FnOnce(&mut Builder<'a, 'tcx>) -> Option<BlockAnd<()>>,
+        F: FnOnce(&mut Builder<'a, 'tcx>),
     {
         let region_scope = self.scopes.topmost();
         let scope = ConstContinuableScope {
@@ -589,31 +589,16 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             match_arms,
         };
         self.scopes.const_continuable_scopes.push(scope);
-        let normal_exit_block = f(self);
+        f(self);
         let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
         assert!(breakable_scope.region_scope == region_scope);
 
         let break_block =
             self.build_exit_tree(breakable_scope.break_drops, region_scope, span, None);
 
-        match (normal_exit_block, break_block) {
-            (Some(block), None) | (None, Some(block)) => block,
-            (None, None) => self.cfg.start_new_block().unit(),
-            (Some(normal_block), Some(exit_block)) => {
-                let target = self.cfg.start_new_block();
-                let source_info = self.source_info(span);
-                self.cfg.terminate(
-                    normal_block.into_block(),
-                    source_info,
-                    TerminatorKind::Goto { target },
-                );
-                self.cfg.terminate(
-                    exit_block.into_block(),
-                    source_info,
-                    TerminatorKind::Goto { target },
-                );
-                target.unit()
-            }
+        match break_block {
+            Some(block) => block,
+            None => self.cfg.start_new_block().unit(),
         }
     }
 
@@ -831,11 +816,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                 drops.add_entry_point(imaginary_target, drop_idx);
 
-                self.cfg.terminate(
-                    imaginary_target,
-                    source_info,
-                    TerminatorKind::UnwindResume,
-                );
+                self.cfg.terminate(imaginary_target, source_info, TerminatorKind::UnwindResume);
 
                 // FIXME add to drop tree for loop_head
 

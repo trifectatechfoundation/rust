@@ -404,8 +404,6 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                                 TerminatorKind::Unreachable,
                                             );
                                         }
-
-                                        None
                                     },
                                 )
                             }
