@@ -85,6 +85,7 @@ use std::mem;
 
 use rustc_ast::LitKind;
 use rustc_data_structures::fx::FxHashMap;
+//use rustc_data_structures::packed::Pu128;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;
@@ -186,6 +187,9 @@ struct ConstContinuableScope<'tcx> {
 
     loop_head: BasicBlock,
     match_arms: SwitchTargets,
+    // Maybe using a single DropTree + linked entry points for each root block
+    //drops: Vec<(Pu128, DropTree)>,
+    //drops_fallback: DropTree,
 }
 
 #[derive(Debug)]
@@ -580,11 +584,21 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         F: FnOnce(&mut Builder<'a, 'tcx>) -> Option<BlockAnd<()>>,
     {
         let region_scope = self.scopes.topmost();
-        let scope = ConstContinuableScope { region_scope, state_place, loop_head, match_arms };
+        let scope = ConstContinuableScope {
+            region_scope,
+            state_place,
+            loop_head,
+            //drops: match_arms.all_values().iter().map(|&i| (i, DropTree::new())).collect(),
+            //drops_fallback: DropTree::new(),
+            match_arms,
+        };
         self.scopes.const_continuable_scopes.push(scope);
         let normal_exit_block = f(self);
         let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
         assert!(breakable_scope.region_scope == region_scope);
+
+        //self.build_exit_tree(drops, region_scope, span, loop_block);
+
         match normal_exit_block {
             Some(block) => block,
             None => self.cfg.start_new_block().unit(),
@@ -781,11 +795,76 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let discr = self.temp(discriminant_ty, source_info.span);
                 let scope = &self.scopes.const_continuable_scopes[break_index];
                 self.cfg.push_assign(block, source_info, discr, rvalue);
+                let drop_and_continue_block = self.cfg.start_new_block();
                 self.cfg.terminate(
                     block,
                     source_info,
-                    TerminatorKind::FalseEdge { real_target, imaginary_target: scope.loop_head },
+                    /*TerminatorKind::FalseEdge {
+                        real_target: drop_and_continue_block,
+                        imaginary_target: scope.loop_head,
+                    },*/
+                    TerminatorKind::Goto { target: drop_and_continue_block }
                 );
+
+                let region_scope = scope.region_scope;
+                let scope_index = self.scopes.scope_index(region_scope, span);
+                let mut drops = DropTree::new();
+
+                let drop_idx = self.scopes.scopes[scope_index + 1..]
+                    .iter()
+                    .flat_map(|scope| &scope.drops)
+                    .fold(ROOT_NODE, |drop_idx, &drop| drops.add_drop(drop, drop_idx));
+
+                drops.add_entry_point(drop_and_continue_block, drop_idx);
+
+                // `build_drop_trees` doesn't have access to our source_info, so we
+                // create a dummy terminator now. `TerminatorKind::UnwindResume` is used
+                // because MIR type checking will panic if it hasn't been overwritten.
+                // (See `<ExitScopes as DropTreeBuilder>::link_entry_point`.)
+                self.cfg.terminate(
+                    drop_and_continue_block,
+                    source_info,
+                    TerminatorKind::UnwindResume,
+                );
+
+                {
+                    let this = &mut *self;
+                    let blocks = drops.build_mir::<ExitScopes>(&mut this.cfg, Some(real_target));
+                    //let is_coroutine = this.coroutine.is_some();
+
+                    /*// Link the exit drop tree to unwind drop tree.
+                    if drops.drops.iter().any(|drop_node| drop_node.data.kind == DropKind::Value) {
+                        let unwind_target = this.diverge_cleanup_target(region_scope, span);
+                        let mut unwind_indices = IndexVec::from_elem_n(unwind_target, 1);
+                        for (drop_idx, drop_node) in drops.drops.iter_enumerated().skip(1) {
+                            match drop_node.data.kind {
+                                DropKind::Storage | DropKind::ForLint => {
+                                    if is_coroutine {
+                                        let unwind_drop = this.scopes.unwind_drops.add_drop(
+                                            drop_node.data,
+                                            unwind_indices[drop_node.next],
+                                        );
+                                        unwind_indices.push(unwind_drop);
+                                    } else {
+                                        unwind_indices.push(unwind_indices[drop_node.next]);
+                                    }
+                                }
+                                DropKind::Value => {
+                                    let unwind_drop = this
+                                        .scopes
+                                        .unwind_drops
+                                        .add_drop(drop_node.data, unwind_indices[drop_node.next]);
+                                    this.scopes.unwind_drops.add_entry_point(
+                                        blocks[drop_idx].unwrap(),
+                                        unwind_indices[drop_node.next],
+                                    );
+                                    unwind_indices.push(unwind_drop);
+                                }
+                            }
+                        }
+                    }*/
+                    blocks[ROOT_NODE].map(BasicBlock::unit)
+                };
 
                 return self.cfg.start_new_block().unit();
             }
