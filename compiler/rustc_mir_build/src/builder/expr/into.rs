@@ -362,9 +362,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 );
 
                                 this.in_const_continuable_scope(
-                                    loop_block,
                                     targets.clone(),
                                     state_place,
+                                    expr_span,
                                     |this| {
                                         let discr = this.temp(discr_ty, source_info.span);
                                         this.cfg.push_assign(

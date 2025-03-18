@@ -185,11 +185,9 @@ struct ConstContinuableScope<'tcx> {
     /// the result of a `break` or `return` expression)
     state_place: Place<'tcx>,
 
-    loop_head: BasicBlock,
     match_arms: SwitchTargets,
-    // Maybe using a single DropTree + linked entry points for each root block
-    //drops: Vec<(Pu128, DropTree)>,
-    //drops_fallback: DropTree,
+    /// Drops that happen on the `return` path and would have happened on the `break` path.
+    break_drops: DropTree,
 }
 
 #[derive(Debug)]
@@ -575,9 +573,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// branch to.
     pub(crate) fn in_const_continuable_scope<F>(
         &mut self,
-        loop_head: BasicBlock,
         match_arms: SwitchTargets,
         state_place: Place<'tcx>,
+        span: Span,
         f: F,
     ) -> BlockAnd<()>
     where
@@ -587,9 +585,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let scope = ConstContinuableScope {
             region_scope,
             state_place,
-            loop_head,
-            //drops: match_arms.all_values().iter().map(|&i| (i, DropTree::new())).collect(),
-            //drops_fallback: DropTree::new(),
+            break_drops: DropTree::new(),
             match_arms,
         };
         self.scopes.const_continuable_scopes.push(scope);
@@ -597,11 +593,27 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let breakable_scope = self.scopes.const_continuable_scopes.pop().unwrap();
         assert!(breakable_scope.region_scope == region_scope);
 
-        //self.build_exit_tree(drops, region_scope, span, loop_block);
+        let break_block =
+            self.build_exit_tree(breakable_scope.break_drops, region_scope, span, None);
 
-        match normal_exit_block {
-            Some(block) => block,
-            None => self.cfg.start_new_block().unit(),
+        match (normal_exit_block, break_block) {
+            (Some(block), None) | (None, Some(block)) => block,
+            (None, None) => self.cfg.start_new_block().unit(),
+            (Some(normal_block), Some(exit_block)) => {
+                let target = self.cfg.start_new_block();
+                let source_info = self.source_info(span);
+                self.cfg.terminate(
+                    normal_block.into_block(),
+                    source_info,
+                    TerminatorKind::Goto { target },
+                );
+                self.cfg.terminate(
+                    exit_block.into_block(),
+                    source_info,
+                    TerminatorKind::Goto { target },
+                );
+                target.unit()
+            }
         }
     }
 
@@ -793,18 +805,39 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 self.block_context.pop();
 
                 let discr = self.temp(discriminant_ty, source_info.span);
-                let scope = &self.scopes.const_continuable_scopes[break_index];
+                let scope_index = self.scopes.scope_index(
+                    self.scopes.const_continuable_scopes[break_index].region_scope,
+                    span,
+                );
+                let scope = &mut self.scopes.const_continuable_scopes[break_index];
                 self.cfg.push_assign(block, source_info, discr, rvalue);
                 let drop_and_continue_block = self.cfg.start_new_block();
+                let imaginary_target = self.cfg.start_new_block();
                 self.cfg.terminate(
                     block,
                     source_info,
-                    /*TerminatorKind::FalseEdge {
+                    TerminatorKind::FalseEdge {
                         real_target: drop_and_continue_block,
-                        imaginary_target: scope.loop_head,
-                    },*/
-                    TerminatorKind::Goto { target: drop_and_continue_block }
+                        imaginary_target,
+                    },
                 );
+
+                let drops = &mut scope.break_drops;
+
+                let drop_idx = self.scopes.scopes[scope_index + 1..]
+                    .iter()
+                    .flat_map(|scope| &scope.drops)
+                    .fold(ROOT_NODE, |drop_idx, &drop| drops.add_drop(drop, drop_idx));
+
+                drops.add_entry_point(imaginary_target, drop_idx);
+
+                self.cfg.terminate(
+                    imaginary_target,
+                    source_info,
+                    TerminatorKind::UnwindResume,
+                );
+
+                // FIXME add to drop tree for loop_head
 
                 let region_scope = scope.region_scope;
                 let scope_index = self.scopes.scope_index(region_scope, span);
