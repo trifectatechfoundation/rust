@@ -358,51 +358,53 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     },
                                 );
 
-                                this.in_const_continuable_scope(
-                                    targets.clone(),
-                                    state_place,
-                                    expr_span,
-                                    |this| {
-                                        let discr = this.temp(discr_ty, source_info.span);
-                                        this.cfg.push_assign(
-                                            body_block,
-                                            source_info,
-                                            discr,
-                                            rvalue,
-                                        );
-                                        let discr = Operand::Copy(discr);
-                                        this.cfg.terminate(
-                                            body_block,
-                                            source_info,
-                                            TerminatorKind::SwitchInt { discr, targets },
-                                        );
-
-                                        let it = arm_blocks
-                                            .into_iter()
-                                            .map(|(_, _, block, arm)| (block, arm))
-                                            .chain(otherwise);
-
-                                        for (mut block, arm) in it {
-                                            if this.cfg.block_data(block).terminator.is_some() {
-                                                continue; // this can occur with or-patterns
-                                            }
-
-                                            let empty_place = this.get_unit_temp();
-                                            unpack!(
-                                                block = this.expr_into_dest(
-                                                    empty_place,
-                                                    block,
-                                                    this.thir[arm].body
-                                                )
-                                            );
-                                            this.cfg.terminate(
-                                                block,
+                                this.in_breakable_scope(None, state_place, expr_span, |this| {
+                                    Some(this.in_const_continuable_scope(
+                                        targets.clone(),
+                                        state_place,
+                                        expr_span,
+                                        |this| {
+                                            let discr = this.temp(discr_ty, source_info.span);
+                                            this.cfg.push_assign(
+                                                body_block,
                                                 source_info,
-                                                TerminatorKind::Unreachable,
+                                                discr,
+                                                rvalue,
                                             );
-                                        }
-                                    },
-                                )
+                                            let discr = Operand::Copy(discr);
+                                            this.cfg.terminate(
+                                                body_block,
+                                                source_info,
+                                                TerminatorKind::SwitchInt { discr, targets },
+                                            );
+
+                                            let it = arm_blocks
+                                                .into_iter()
+                                                .map(|(_, _, block, arm)| (block, arm))
+                                                .chain(otherwise);
+
+                                            for (mut block, arm) in it {
+                                                if this.cfg.block_data(block).terminator.is_some() {
+                                                    continue; // this can occur with or-patterns
+                                                }
+
+                                                let empty_place = this.get_unit_temp();
+                                                unpack!(
+                                                    block = this.expr_into_dest(
+                                                        empty_place,
+                                                        block,
+                                                        this.thir[arm].body
+                                                    )
+                                                );
+                                                this.cfg.terminate(
+                                                    block,
+                                                    source_info,
+                                                    TerminatorKind::Unreachable,
+                                                );
+                                            }
+                                        },
+                                    ))
+                                })
                             }
                         )
                     );
