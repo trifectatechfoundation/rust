@@ -251,22 +251,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let dropless_arena = rustc_arena::DroplessArena::default();
                 let typeck_results = this.tcx.typeck(this.def_id);
 
-                // FIXME use the lint level from `ExprKind::LoopMatch`
-                let lint_level = this.tcx.local_def_id_to_hir_id(this.def_id);
-
                 // the PatCtxt is normally used in pattern exhaustiveness checking, but reused here
                 // because it performs normalization and const evaluation.
                 let cx = RustcPatCtxt {
                     tcx: this.tcx,
                     typeck_results,
-                    module: this.tcx.parent_module(lint_level).to_def_id(),
+                    module: this.tcx.parent_module(this.hir_id).to_def_id(),
                     // FIXME(#132279): We're in a body, should handle opaques.
                     typing_env: rustc_middle::ty::TypingEnv::non_body_analysis(
                         this.tcx,
                         this.def_id,
                     ),
                     dropless_arena: &dropless_arena,
-                    match_lint_level: lint_level,
+                    match_lint_level: this.hir_id,
                     whole_match_span: Some(rustc_span::Span::default()),
                     scrut_span: rustc_span::Span::default(),
                     refutable: true,

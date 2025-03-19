@@ -368,7 +368,6 @@ pub enum ExprKind<'tcx> {
         state: ExprId,
 
         region_scope: region::Scope,
-        // lint_level: LintLevel,
         arms: Box<[ArmId]>,
     },
     /// Special expression representing the `let` part of an `if let` or similar construct
