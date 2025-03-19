@@ -5,7 +5,7 @@
 * [x] `_` and `Foo | Bar` patterns
 * [x] handle in the `let mut` checker (likely needs handling drop trees for StorageDead)
 * [ ] `lint_level`?
-* [ ] test if nested `#[loop_match]` with `#[const_continue]` operating on outer loop works
+* [x] test if nested `#[loop_match]` with `#[const_continue]` operating on outer loop works
 * [x] deny attributes on the wrong items
     * [ ] add test
 * [ ] fix crash for `match self.bit_reader.bits(2) {}` in zlib-rs
