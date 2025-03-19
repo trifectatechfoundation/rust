@@ -896,7 +896,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         dcx.emit_fatal(LoopMatchBadRhs { span: block_body.span })
                     };
 
-                    let hir::ExprKind::Match(scrutinee, arms, match_source) = block_body_expr.kind
+                    let hir::ExprKind::Match(scrutinee, arms, _match_source) = block_body_expr.kind
                     else {
                         dcx.emit_fatal(LoopMatchBadRhs { span: block_body_expr.span })
                     };
@@ -930,7 +930,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         },
 
                         arms: arms.iter().map(|a| self.convert_arm(a)).collect(),
-                        match_source,
                     }
                 } else {
                     let block_ty = self.typeck_results.node_type(body.hir_id);
