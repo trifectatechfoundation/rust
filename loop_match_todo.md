@@ -4,7 +4,7 @@
 * [x] integer patterns
 * [x] `_` and `Foo | Bar` patterns
 * [x] handle in the `let mut` checker (likely needs handling drop trees for StorageDead)
-* [ ] `lint_level`?
+* [x] `lint_level`?
 * [x] test if nested `#[loop_match]` with `#[const_continue]` operating on outer loop works
 * [x] deny attributes on the wrong items
     * [ ] add test
