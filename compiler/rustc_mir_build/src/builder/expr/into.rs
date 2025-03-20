@@ -276,7 +276,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 this.cfg.goto(block, source_info, loop_block);
 
                 // FIXME do we need the breakable scope?
-                this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
+                this.in_breakable_scope(Some(loop_block), destination, expr_span, |this| {
                     // conduct the test, if necessary
                     let mut body_block = this.cfg.start_new_block();
                     this.cfg.terminate(
@@ -383,18 +383,30 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                                 .map(|(_, _, block, arm)| (block, arm))
                                                 .chain(otherwise);
 
-                                            for (mut block, arm) in it {
+                                            for (mut block, arm_id) in it {
                                                 if this.cfg.block_data(block).terminator.is_some() {
                                                     continue; // this can occur with or-patterns
                                                 }
 
+                                                let arm = &this.thir[arm_id];
+                                                let arm_source_info = this.source_info(arm.span);
+                                                let arm_scope = (arm.scope, arm_source_info);
+
                                                 let empty_place = this.get_unit_temp();
                                                 unpack!(
-                                                    block = this.expr_into_dest(
-                                                        empty_place,
-                                                        block,
-                                                        this.thir[arm].body
-                                                    )
+                                                    block = {
+                                                        this.in_scope(
+                                                            arm_scope,
+                                                            arm.lint_level,
+                                                            |this| {
+                                                                this.expr_into_dest(
+                                                                    empty_place,
+                                                                    block,
+                                                                    arm.body,
+                                                                )
+                                                            },
+                                                        )
+                                                    }
                                                 );
                                                 this.cfg.terminate(
                                                     block,
