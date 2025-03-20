@@ -85,7 +85,6 @@ use std::mem;
 
 use rustc_ast::LitKind;
 use rustc_data_structures::fx::FxHashMap;
-//use rustc_data_structures::packed::Pu128;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;

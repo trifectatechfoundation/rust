@@ -312,12 +312,11 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
                 self.print_expr(*body, depth_lvl + 2);
                 print_indented!(self, ")", depth_lvl);
             }
-            LoopMatch { state, region_scope, /*lint_level,*/ arms, .. } => {
+            LoopMatch { state, region_scope, arms } => {
                 print_indented!(self, "LoopMatch (", depth_lvl);
                 print_indented!(self, "state:", depth_lvl + 1);
                 self.print_expr(*state, depth_lvl + 2);
                 print_indented!(self, format!("region_scope: {:?}", region_scope), depth_lvl + 1);
-                //print_indented!(self, format!("lint_level: {:?}", lint_level), depth_lvl + 1);
 
                 print_indented!(self, "arms: [", depth_lvl + 1);
                 for arm_id in arms.iter() {
