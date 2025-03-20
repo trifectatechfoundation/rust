@@ -849,7 +849,12 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 assert!(int_range.is_singleton());
 
                 let bits = pat.ty().primitive_size(self.tcx).bits();
-                let value = int_range.lo.as_finite_int(bits).unwrap();
+
+                let value = if pat.ty().is_signed() {
+                    int_range.lo.as_finite_int(bits).unwrap()
+                } else {
+                    int_range.lo.as_finite_uint().unwrap()
+                };
 
                 let discr = Discr { val: value, ty: **pat.ty() };
 
