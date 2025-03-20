@@ -17,7 +17,7 @@ fn main() {
                 State::A =>
                 {
                     #[const_continue]
-                    break 'blk State::B
+                    break 'blk State::B;
                 }
                 State::B => {
                     let _a = 0;
@@ -32,6 +32,6 @@ fn main() {
                 }
                 State::C => break 'a,
             }
-        }
+        };
     }
 }
