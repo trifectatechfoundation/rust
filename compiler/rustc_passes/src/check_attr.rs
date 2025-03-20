@@ -2594,20 +2594,14 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
     }
 
     fn check_loop_match(&self, span: Span, target: Target) {
-        match target {
-            Target::Expression => return,
-            _ => {
-                self.dcx().emit_err(errors::LoopMatchAttr { attr_span: span });
-            }
+        if !matches!(target, Target::Expression) {
+            self.dcx().emit_err(errors::LoopMatchAttr { attr_span: span });
         }
     }
 
     fn check_const_continue(&self, span: Span, target: Target) {
-        match target {
-            Target::Expression => return,
-            _ => {
-                self.dcx().emit_err(errors::ConstContinueAttr { attr_span: span });
-            }
+        if !matches!(target, Target::Expression) {
+            self.dcx().emit_err(errors::ConstContinueAttr { attr_span: span });
         }
     }
 }

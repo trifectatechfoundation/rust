@@ -14,8 +14,7 @@ fn main() {
     'a: loop {
         state = 'blk: {
             match state {
-                State::A =>
-                {
+                State::A => {
                     #[const_continue]
                     break 'blk State::B;
                 }
@@ -25,7 +24,6 @@ fn main() {
                         #[const_continue]
                         break 'blk State::C;
                     } else {
-                        // No drops allowed at this point
                         #[const_continue]
                         break 'blk State::A;
                     }
