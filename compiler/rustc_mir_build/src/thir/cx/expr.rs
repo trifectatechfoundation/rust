@@ -871,12 +871,18 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 if is_loop_match {
                     let dcx = self.tcx.dcx();
 
-                    if let ([first, ..], [.., last]) = (body.stmts, body.stmts) {
-                        dcx.emit_fatal(LoopMatchBadStatements { span: first.span.to(last.span) })
-                    }
-
-                    let Some(loop_body_expr) = body.expr else {
-                        dcx.emit_fatal(LoopMatchMissingAssignment { span: body.span })
+                    // accept either `state = expr` or `state = expr;`
+                    let loop_body_expr = match body.stmts {
+                        [] => match body.expr {
+                            Some(expr) => expr,
+                            None => dcx.emit_fatal(LoopMatchMissingAssignment { span: body.span }),
+                        },
+                        [single] if body.expr.is_none() => match single.kind {
+                            hir::StmtKind::Expr(expr) | hir::StmtKind::Semi(expr) => expr,
+                            _ => dcx.emit_fatal(LoopMatchMissingAssignment { span: body.span }),
+                        },
+                        [first @ last] | [first, .., last] => dcx
+                            .emit_fatal(LoopMatchBadStatements { span: first.span.to(last.span) }),
                     };
 
                     let hir::ExprKind::Assign(state, rhs_expr, _) = loop_body_expr.kind else {
