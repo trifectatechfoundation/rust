@@ -83,13 +83,15 @@ that contains only loops and breakable blocks. It tracks where a `break`,
 
 use std::mem;
 
+use rustc_abi::Size;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
-use rustc_middle::thir::{ArmId, ExprId, LintLevel};
-use rustc_middle::{bug, span_bug};
+use rustc_middle::thir::{AdtExpr, AdtExprBase, ArmId, ExprId, ExprKind, LintLevel};
+use rustc_middle::ty::ValTree;
+use rustc_middle::{bug, span_bug, ty};
 use rustc_pattern_analysis::rustc::RustcPatCtxt;
 use rustc_session::lint::Level;
 use rustc_span::source_map::Spanned;
@@ -761,8 +763,37 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     span_bug!(span, "break value must be a scope")
                 };
 
-                // FIXME accept bare MyEnum::Foo as constant
-                let constant = self.as_constant(&self.thir[value]);
+                let constant = match &self.thir[value].kind {
+                    ExprKind::Adt(box AdtExpr { variant_index, fields, base, .. }) => {
+                        assert!(matches!(base, AdtExprBase::None));
+                        assert!(fields.is_empty());
+                        ConstOperand {
+                            span: self.thir[value].span,
+                            user_ty: None,
+                            const_: Const::Ty(
+                                self.thir[value].ty,
+                                ty::Const::new(
+                                    self.tcx,
+                                    ty::ConstKind::Value(ty::Value {
+                                        ty: self.thir[value].ty,
+                                        valtree: ValTree::from_branches(
+                                            self.tcx,
+                                            Some(ValTree::from_scalar_int(
+                                                self.tcx,
+                                                ty::ScalarInt::try_from_uint(
+                                                    variant_index.as_u32(),
+                                                    Size::from_bits(32),
+                                                )
+                                                .unwrap(),
+                                            )),
+                                        ),
+                                    }),
+                                ),
+                            ),
+                        }
+                    }
+                    _ => self.as_constant(&self.thir[value]),
+                };
 
                 let break_index = self
                     .scopes
