@@ -83,7 +83,6 @@ that contains only loops and breakable blocks. It tracks where a `break`,
 
 use std::mem;
 
-use rustc_abi::Size;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
@@ -772,22 +771,16 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             user_ty: None,
                             const_: Const::Ty(
                                 self.thir[value].ty,
-                                ty::Const::new(
+                                ty::Const::new_value(
                                     self.tcx,
-                                    ty::ConstKind::Value(ty::Value {
-                                        ty: self.thir[value].ty,
-                                        valtree: ValTree::from_branches(
+                                    ValTree::from_branches(
+                                        self.tcx,
+                                        [ValTree::from_scalar_int(
                                             self.tcx,
-                                            Some(ValTree::from_scalar_int(
-                                                self.tcx,
-                                                ty::ScalarInt::try_from_uint(
-                                                    variant_index.as_u32(),
-                                                    Size::from_bits(32),
-                                                )
-                                                .unwrap(),
-                                            )),
-                                        ),
-                                    }),
+                                            variant_index.as_u32().into(),
+                                        )],
+                                    ),
+                                    self.thir[value].ty,
                                 ),
                             ),
                         }
