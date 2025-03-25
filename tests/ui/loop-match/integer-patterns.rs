@@ -13,11 +13,11 @@ fn main() {
             match state {
                 -1 => {
                     #[const_continue]
-                    break 'blk const { 2 };
+                    break 'blk 2;
                 }
                 0 => {
                     #[const_continue]
-                    break 'blk const { -1 };
+                    break 'blk -1;
                 }
                 2 => break 'a,
                 _ => unreachable!("weird value {:?}", state),

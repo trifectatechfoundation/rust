@@ -17,7 +17,9 @@ use rustc_hir::{BindingMode, ByRef, LetStmt, LocalSource, Node};
 use rustc_middle::middle::region;
 use rustc_middle::mir::{self, *};
 use rustc_middle::thir::{self, *};
-use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TypeVisitableExt, ValTreeKind};
+use rustc_middle::ty::{
+    self, CanonicalUserTypeAnnotation, Ty, TypeVisitableExt, ValTree, ValTreeKind,
+};
 use rustc_middle::{bug, span_bug};
 use rustc_pattern_analysis::rustc::{DeconstructedPat, RustcPatCtxt};
 use rustc_span::{BytePos, Pos, Span, Symbol, sym};
@@ -2919,6 +2921,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     ty::ConstKind::Value(cv) => break 'a (cv.valtree, cv.ty),
                     other => span_bug!(constant.span, "{other:#?}"),
                 },
+                mir::Const::Val(mir::ConstValue::Scalar(mir::interpret::Scalar::Int(val)), ty) => {
+                    break 'a (ValTree::from_scalar_int(self.tcx, val), ty);
+                }
                 // We should never encounter `Const::Val` unless MIR opts (like const prop) evaluate
                 // a constant and write that value back into `Operand`s. This could happen, but is
                 // unlikely. Also: all users of `simd_shuffle` are on unstable and already need to take
