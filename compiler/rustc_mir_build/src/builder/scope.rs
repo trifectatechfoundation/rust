@@ -88,8 +88,9 @@ use rustc_hir::HirId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
-use rustc_middle::thir::{ArmId, ExprId, LintLevel};
-use rustc_middle::{bug, span_bug};
+use rustc_middle::thir::{AdtExpr, AdtExprBase, ArmId, ExprId, ExprKind, LintLevel};
+use rustc_middle::ty::ValTree;
+use rustc_middle::{bug, span_bug, ty};
 use rustc_pattern_analysis::rustc::RustcPatCtxt;
 use rustc_session::lint::Level;
 use rustc_span::source_map::Spanned;
@@ -761,6 +762,32 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     span_bug!(span, "break value must be a scope")
                 };
 
+                let constant = match &self.thir[value].kind {
+                    ExprKind::Adt(box AdtExpr { variant_index, fields, base, .. }) => {
+                        assert!(matches!(base, AdtExprBase::None));
+                        assert!(fields.is_empty());
+                        ConstOperand {
+                            span: self.thir[value].span,
+                            user_ty: None,
+                            const_: Const::Ty(
+                                self.thir[value].ty,
+                                ty::Const::new_value(
+                                    self.tcx,
+                                    ValTree::from_branches(
+                                        self.tcx,
+                                        [ValTree::from_scalar_int(
+                                            self.tcx,
+                                            variant_index.as_u32().into(),
+                                        )],
+                                    ),
+                                    self.thir[value].ty,
+                                ),
+                            ),
+                        }
+                    }
+                    _ => self.as_constant(&self.thir[value]),
+                };
+
                 let break_index = self
                     .scopes
                     .const_continuable_scopes
@@ -809,7 +836,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 };
 
                 let Some(real_target) =
-                    self.static_pattern_match(&cx, value, &*scope.arms, &scope.built_match_tree)
+                    self.static_pattern_match(&cx, constant, &*scope.arms, &scope.built_match_tree)
                 else {
                     self.tcx.dcx().emit_fatal(ConstContinueUnknownJumpTarget { span })
                 };
