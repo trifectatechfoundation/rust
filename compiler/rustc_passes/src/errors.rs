@@ -1222,27 +1222,6 @@ pub(crate) struct UnlabeledCfInWhileCondition<'a> {
     pub cf_type: &'a str,
 }
 
-#[derive(Diagnostic)]
-#[diag(passes_loop_match_bad_statements)]
-pub(crate) struct LoopMatchBadStatements {
-    #[primary_span]
-    pub span: Span,
-}
-
-#[derive(Diagnostic)]
-#[diag(passes_loop_match_bad_rhs)]
-pub(crate) struct LoopMatchBadRhs {
-    #[primary_span]
-    pub span: Span,
-}
-
-#[derive(Diagnostic)]
-#[diag(passes_loop_match_missing_assignment)]
-pub(crate) struct LoopMatchMissingAssignment {
-    #[primary_span]
-    pub span: Span,
-}
-
 #[derive(LintDiagnostic)]
 #[diag(passes_undefined_naked_function_abi)]
 pub(crate) struct UndefinedNakedFunctionAbi;
