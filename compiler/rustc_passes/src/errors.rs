@@ -50,6 +50,13 @@ pub(crate) struct ConstContinueAttr {
     pub node_span: Span,
 }
 
+#[derive(Diagnostic)]
+#[diag(passes_const_continue_bad_label)]
+pub(crate) struct ConstContinueBadLabel {
+    #[primary_span]
+    pub span: Span,
+}
+
 #[derive(LintDiagnostic)]
 #[diag(passes_outer_crate_level_attr)]
 pub(crate) struct OuterCrateLevelAttr;

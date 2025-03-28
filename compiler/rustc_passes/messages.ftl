@@ -103,6 +103,9 @@ passes_const_continue_attr =
     `#[const_continue]` should be applied to a break expression
     .label = not a break expression
 
+passes_const_continue_bad_label =
+    `#[const_continue]` must break to a labeled block that participates in a `#[loop_match]`
+
 passes_const_stable_not_stable =
     attribute `#[rustc_const_stable]` can only be applied to functions that are declared `#[stable]`
     .label = attribute specified here
