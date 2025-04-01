@@ -85,11 +85,13 @@ use std::mem;
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::HirId;
+use rustc_hir::def_id::DefId;
 use rustc_index::{IndexSlice, IndexVec};
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
-use rustc_middle::thir::{ArmId, ExprId, LintLevel};
-use rustc_middle::{bug, span_bug};
+use rustc_middle::thir::{AdtExpr, AdtExprBase, ArmId, ExprId, ExprKind, LintLevel};
+use rustc_middle::ty::{GenericArgsRef, Ty, ValTree};
+use rustc_middle::{bug, span_bug, ty};
 use rustc_pattern_analysis::rustc::RustcPatCtxt;
 use rustc_session::lint::Level;
 use rustc_span::source_map::Spanned;
@@ -816,16 +818,17 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     pub(crate) fn break_const_continuable_scope(
         &mut self,
         mut block: BasicBlock,
-        value: ExprId,
+        did: DefId,
+        args: GenericArgsRef<'tcx>,
+        ty: Ty<'tcx>,
         scope: region::Scope,
         source_info: SourceInfo,
     ) -> BlockAnd<()> {
         let span = source_info.span;
 
-        // A break can only break out of a scope, so the value should be a scope.
-        let rustc_middle::thir::ExprKind::Scope { value, .. } = self.thir[value].kind else {
-            span_bug!(span, "break value must be a scope")
-        };
+        let uneval = UnevaluatedConst::new(did, args);
+        let const_ = Const::Unevaluated(uneval, ty);
+        let constant = ConstOperand { user_ty: None, span, const_ };
 
         let break_index = self
             .scopes
@@ -868,7 +871,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         };
 
         let Some(real_target) =
-            self.static_pattern_match(&cx, value, &*scope.arms, &scope.built_match_tree)
+            self.static_pattern_match(&cx, constant, &*scope.arms, &scope.built_match_tree)
         else {
             self.tcx.dcx().emit_fatal(ConstContinueUnknownJumpTarget { span })
         };

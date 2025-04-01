@@ -92,8 +92,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Break { label, value } => {
                 this.break_scope(block, value, BreakableTarget::Break(label), source_info)
             }
-            ExprKind::ConstContinue { label, value } => {
-                this.break_const_continuable_scope(block, value, label, source_info)
+            ExprKind::ConstContinue { label, did, args } => {
+                this.break_const_continuable_scope(block, did, args, expr.ty, label, source_info)
             }
             ExprKind::Return { value } => {
                 this.break_scope(block, value, BreakableTarget::Return, source_info)
