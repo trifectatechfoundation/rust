@@ -808,12 +808,24 @@ impl<'tcx> ThirBuildCx<'tcx> {
                                 self.tcx.dcx().emit_fatal(ConstContinueMissingValue { span })
                             };
 
+                            let ty = self.typeck_results.node_type(anon_const.hir_id);
+                            let did = anon_const.def_id.to_def_id();
+                            let typeck_root_def_id = tcx.typeck_root_def_id(did);
+                            let parent_args = tcx.erase_regions(GenericArgs::identity_for_item(
+                                tcx,
+                                typeck_root_def_id,
+                            ));
+                            let args =
+                                InlineConstArgs::new(tcx, InlineConstArgsParts { parent_args, ty })
+                                    .args;
+
                             ExprKind::ConstContinue {
                                 label: region::Scope {
                                     local_id: target_id.local_id,
                                     data: region::ScopeData::Node,
                                 },
-                                value: self.mirror_expr(value),
+                                did,
+                                args,
                             }
                         }
                         Err(err) => bug!("invalid loop id for break: {}", err),
