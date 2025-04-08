@@ -430,11 +430,11 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
                 print_indented!(self, format!("label: {:?}", label), depth_lvl + 1);
                 print_indented!(self, "}", depth_lvl);
             }
-            ConstContinue { label, value } => {
+            ConstContinue { label, did, args } => {
                 print_indented!(self, "ConstContinue (", depth_lvl);
                 print_indented!(self, format!("label: {:?}", label), depth_lvl + 1);
-                print_indented!(self, "value:", depth_lvl + 1);
-                self.print_expr(*value, depth_lvl + 2);
+                print_indented!(self, format!("did: {:?}", did), depth_lvl + 1);
+                print_indented!(self, format!("args: {:?}", args), depth_lvl + 1);
                 print_indented!(self, ")", depth_lvl);
             }
             Return { value } => {

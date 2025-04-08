@@ -462,7 +462,8 @@ pub enum ExprKind<'tcx> {
     /// A `#[const_continue] break` expression.
     ConstContinue {
         label: region::Scope,
-        value: ExprId,
+        did: DefId,
+        args: GenericArgsRef<'tcx>,
     },
     /// A `return` expression.
     Return {
